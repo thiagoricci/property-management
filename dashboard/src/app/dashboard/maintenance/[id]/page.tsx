@@ -38,7 +38,7 @@ export default function MaintenanceDetailPage() {
   const fetchRequest = async () => {
     try {
       const response = await apiClient.get<MaintenanceDetail>(
-        `/maintenance/${params.id}`
+        `/maintenance-requests/${params.id}`
       );
       setRequest(response.data);
     } catch (error) {
@@ -54,7 +54,7 @@ export default function MaintenanceDetailPage() {
     setIsUpdatingStatus(true);
 
     try {
-      await apiClient.patch(`/maintenance/${request.id}/status`, {
+      await apiClient.patch(`/maintenance-requests/${request.id}/status`, {
         status: newStatus,
       });
       setRequest({ ...request, status: newStatus as any });
@@ -72,7 +72,7 @@ export default function MaintenanceDetailPage() {
     setIsSavingNotes(true);
 
     try {
-      await apiClient.patch(`/maintenance/${request.id}/notes`, { notes });
+      await apiClient.patch(`/maintenance-requests/${request.id}/notes`, { notes });
       setRequest({ ...request, notes });
     } catch (error) {
       console.error("Failed to update notes:", error);
@@ -133,7 +133,7 @@ export default function MaintenanceDetailPage() {
   return (
     <div className="space-y-6">
       <div className="flex items-center gap-4">
-        <Link href="/maintenance">
+        <Link href="/dashboard/maintenance">
           <Button variant="ghost" size="icon">
             <ArrowLeft className="h-5 w-5" />
           </Button>

@@ -46,7 +46,7 @@ export default function EditPropertyPage() {
         amenities: property.amenities,
         rules: property.rules,
       });
-      router.push(`/properties/${property.id}`);
+      router.push(`/dashboard/properties/${property.id}`);
     } catch (error) {
       console.error("Failed to update property:", error);
       alert("Failed to update property");
@@ -74,7 +74,7 @@ export default function EditPropertyPage() {
   return (
     <div className="space-y-6">
       <div className="flex items-center gap-4">
-        <Link href={`/properties/${property.id}`}>
+        <Link href={`/dashboard/properties/${property.id}`}>
           <Button variant="ghost" size="icon">
             <ArrowLeft className="h-5 w-5" />
           </Button>
@@ -211,7 +211,7 @@ export default function EditPropertyPage() {
             </div>
 
             <div className="flex gap-3 pt-4">
-              <Link href={`/properties/${property.id}`} className="flex-1">
+              <Link href={`/dashboard/properties/${property.id}`} className="flex-1">
                 <Button type="button" variant="outline" className="w-full">
                   Cancel
                 </Button>

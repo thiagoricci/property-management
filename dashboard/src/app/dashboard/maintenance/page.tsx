@@ -46,7 +46,7 @@ export default function MaintenanceRequestsPage() {
       if (filters.property_id) queryParams.append("property_id", filters.property_id);
 
       const response = await apiClient.get<MaintenanceRequest[]>(
-        `/maintenance?${queryParams.toString()}`
+        `/maintenance-requests?${queryParams.toString()}`
       );
       setRequests(response.data);
     } catch (error) {
@@ -95,7 +95,7 @@ export default function MaintenanceRequestsPage() {
 
   const updateStatus = async (id: number, newStatus: string) => {
     try {
-      await apiClient.patch(`/maintenance/${id}/status`, { status: newStatus });
+      await apiClient.patch(`/maintenance-requests/${id}/status`, { status: newStatus });
       setRequests(
         requests.map((r) =>
           r.id === id ? { ...r, status: newStatus as any } : r
@@ -306,7 +306,7 @@ export default function MaintenanceRequestsPage() {
                           </Button>
                         )}
                       </div>
-                      <Link href={`/maintenance/${request.id}`}>
+                      <Link href={`/dashboard/maintenance/${request.id}`}>
                         <Button size="sm" className="flex items-center gap-1">
                           View Details
                           <ArrowRight className="h-3 w-3" />

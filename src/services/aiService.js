@@ -174,6 +174,21 @@ Remember: Always include the JSON action block at the very END of your response,
     const lowerMessage = message.toLowerCase();
     return emergencyKeywords.some(keyword => lowerMessage.includes(keyword));
   }
+
+  /**
+   * Strip JSON action blocks from AI response for user display
+   * @param {String} response - Full AI response with JSON blocks
+   * @returns {String} Clean response without JSON blocks
+   */
+  stripJSONFromResponse(response) {
+    // Remove JSON action blocks (all JSON objects in the response)
+    let cleaned = response.replace(/\{[\s\S]*?\}/g, "").trim();
+    
+    // Remove extra whitespace and newlines
+    cleaned = cleaned.replace(/\s+/g, " ");
+    
+    return cleaned;
+  }
 }
 
 module.exports = new AIService();

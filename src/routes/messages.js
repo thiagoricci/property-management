@@ -1,6 +1,7 @@
 const express = require("express");
 const db = require("../config/database");
 const aiService = require("../services/aiService");
+const notificationService = require("../services/notificationService");
 const router = express.Router();
 
 /**
@@ -13,8 +14,8 @@ router.post("/", async (req, res) => {
 
     // Validate required fields
     if (!tenant_id || !message) {
-      return res.status(400).json({ 
-        error: "Missing required fields: tenant_id and message are required" 
+      return res.status(400).json({
+        error: "Missing required fields: tenant_id and message are required"
       });
     }
 
@@ -40,10 +41,10 @@ router.post("/", async (req, res) => {
 
     // Load conversation history (last 10 messages)
     const historyResult = await db.query(
-      `SELECT message, response 
-       FROM conversations 
-       WHERE tenant_id = $1 
-       ORDER BY timestamp DESC 
+      `SELECT message, response
+       FROM conversations
+       WHERE tenant_id = $1
+       ORDER BY timestamp DESC
        LIMIT 10`,
       [tenant_id]
     );
@@ -97,17 +98,21 @@ router.post("/", async (req, res) => {
       }
     }
 
+    // Strip JSON from response for user display
+    const cleanResponse = aiService.stripJSONFromResponse(aiResponse);
+
     res.json({
       success: true,
       response: aiResponse,
+      response_display: cleanResponse,
       actions: executedActions,
       conversation: savedConversation,
     });
   } catch (error) {
     console.error("Handle message error:", error);
-    res.status(500).json({ 
+    res.status(500).json({
       error: "Failed to process message",
-      details: error.message 
+      details: error.message
     });
   }
 });
@@ -149,40 +154,108 @@ async function createMaintenanceRequest(action, tenantId, propertyId, conversati
     throw new Error("Missing required fields for maintenance request");
   }
 
+  // Create maintenance request in database
   const result = await db.query(
-    `INSERT INTO maintenance_requests 
+    `INSERT INTO maintenance_requests
        (property_id, tenant_id, conversation_id, issue_description, priority, status, created_at)
        VALUES ($1, $2, $3, $4, $5, 'open', NOW())
        RETURNING *`,
     [propertyId, tenantId, conversationId, description, priority]
   );
 
-  console.log(`Created maintenance request: ${result.rows[0].id} with priority: ${priority}`);
-  
-  return { 
-    type: "maintenance_request", 
-    request_id: result.rows[0].id,
-    priority 
+  const maintenanceRequest = result.rows[0];
+
+  // Load tenant and property details
+  const tenantResult = await db.query(
+    "SELECT * FROM tenants WHERE id = $1",
+    [tenantId]
+  );
+  const propertyResult = await db.query(
+    "SELECT * FROM properties WHERE id = $1",
+    [propertyId]
+  );
+
+  const tenant = tenantResult.rows[0];
+  const property = propertyResult.rows[0];
+
+  // Notify manager about new maintenance request
+  const notificationResult = await notificationService.notifyManagerOfMaintenanceRequest(
+    maintenanceRequest,
+    tenant,
+    property
+  );
+
+  console.log(`Created maintenance request: ${maintenanceRequest.id} with priority: ${priority}`);
+  console.log(`Manager notification sent: ${notificationResult.success ? "SUCCESS" : "FAILED"}`);
+
+  // Send confirmation to tenant
+  const confirmationMessage = buildTenantConfirmation(priority);
+  await notificationService.sendTenantConfirmation(
+    tenant.phone,
+    tenant.email,
+    confirmationMessage,
+    "sms" // Default to SMS for immediate confirmation
+  );
+
+  return {
+    type: "maintenance_request",
+    request_id: maintenanceRequest.id,
+    priority,
+    notification: notificationResult,
   };
 }
 
 /**
- * Alert property manager (placeholder for future implementation)
+ * Build tenant confirmation message
+ */
+function buildTenantConfirmation(priority) {
+  const messages = {
+    emergency: "🚨 EMERGENCY: Your report has been received and your property manager has been notified immediately. If this is a life-threatening emergency, please call 911.",
+    urgent: "⚠️ Your urgent request has been received and your property manager has been notified. They will address this as soon as possible.",
+    normal: "✅ Your maintenance request has been received. Your property manager has been notified and will review it shortly.",
+    low: "📝 Your request has been logged. Your property manager will review it at their earliest convenience.",
+  };
+
+  return messages[priority] || messages.normal;
+}
+
+/**
+ * Alert property manager about emergency or urgent issue
  */
 async function alertManager(action, tenantId, propertyId) {
   const { urgency, reason } = action;
 
-  console.log(`ALERT MANAGER: ${urgency} - ${reason}`);
-  console.log(`Tenant ID: ${tenantId}, Property ID: ${propertyId}`);
+  // Load tenant and property details
+  const tenantResult = await db.query(
+    "SELECT * FROM tenants WHERE id = $1",
+    [tenantId]
+  );
+  const propertyResult = await db.query(
+    "SELECT * FROM properties WHERE id = $1",
+    [propertyId]
+  );
 
-  // TODO: Implement actual notification via Twilio SMS or Resend email
-  // For now, just log it
-  
-  return { 
-    type: "alert_manager", 
-    urgency, 
+  if (tenantResult.rows.length === 0 || propertyResult.rows.length === 0) {
+    throw new Error("Tenant or property not found");
+  }
+
+  const tenant = tenantResult.rows[0];
+  const property = propertyResult.rows[0];
+
+  // Send emergency notification
+  const result = await notificationService.notifyManagerOfEmergency(
     reason,
-    status: "logged" 
+    tenant,
+    property
+  );
+
+  console.log(`Emergency alert sent: ${urgency} - ${reason}`);
+
+  return {
+    type: "alert_manager",
+    urgency,
+    reason,
+    notification: result,
   };
 }
 
@@ -196,9 +269,9 @@ router.get("/:tenantId/history", async (req, res) => {
     const { limit = 20 } = req.query;
 
     const result = await db.query(
-      `SELECT * FROM conversations 
-       WHERE tenant_id = $1 
-       ORDER BY timestamp DESC 
+      `SELECT * FROM conversations
+       WHERE tenant_id = $1
+       ORDER BY timestamp DESC
        LIMIT $2`,
       [tenantId, parseInt(limit)]
     );

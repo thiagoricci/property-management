@@ -52,7 +52,7 @@ An AI-powered property management platform that automates tenant communications,
 
    ```bash
    psql -U postgres
-   CREATE DATABASE property_manager_mvp;
+   CREATE DATABASE property_manager;
    \q
    ```
 

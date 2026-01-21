@@ -90,6 +90,20 @@ Previous completed work:
   - Manual reply functionality (ready for Twilio/Resend integration)
   - Pagination support
 
+**2026-01-21**:
+
+- Implemented JSON removal from AI responses in user-facing interfaces
+  - Added stripJSONFromResponse() method to aiService.js
+  - Updated POST /api/messages to return both full response and clean response_display
+  - Updated GET /conversations and GET /conversations/:id to return response_display
+  - Updated dashboard TypeScript types to include response_display field
+  - Updated conversation detail page to display clean responses
+  - Updated conversations list page to display clean responses
+  - SMS responses already had JSON removal (no changes needed)
+  - Database continues to store full responses with JSON for audit trail
+  - Verified dashboard shows clean AI responses without JSON blocks
+  - Created JSON_REMOVAL_IMPLEMENTATION.md documentation
+
 ## Next Steps
 
 Based on the 25-step build plan, the immediate next steps are:

@@ -27,6 +27,7 @@ export interface Conversation {
   channel: "sms" | "email" | "whatsapp";
   message: string;
   response: string;
+  response_display?: string;
   ai_actions?: any;
   timestamp: string;
   flagged?: boolean;

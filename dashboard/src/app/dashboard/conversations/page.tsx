@@ -181,7 +181,7 @@ export default function ConversationsPage() {
                         >
                           <Flag className="h-4 w-4" />
                         </Button>
-                        <Link href={`/conversations/${conv.id}`}>
+                        <Link href={`/dashboard/conversations/${conv.id}`}>
                           <Button size="sm" className="flex items-center gap-1">
                             View
                             <ArrowRight className="h-3 w-3" />
@@ -208,7 +208,7 @@ export default function ConversationsPage() {
                         <span className="text-sm font-medium">AI Response:</span>
                       </div>
                       <p className="text-sm line-clamp-3">
-                        {conv.response}
+                        {conv.response_display || conv.response}
                       </p>
                     </div>
                   </div>

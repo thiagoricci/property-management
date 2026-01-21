@@ -25,6 +25,7 @@ interface ConversationDetail extends Conversation {
   tenant_phone?: string;
   tenant_email?: string;
   property_address?: string;
+  response_display?: string;
   related_maintenance: MaintenanceRequest[];
 }
 
@@ -118,7 +119,7 @@ export default function ConversationDetailPage() {
   return (
     <div className="space-y-6">
       <div className="flex items-center gap-4">
-        <Link href="/conversations">
+        <Link href="/dashboard/conversations">
           <Button variant="ghost" size="icon">
             <ArrowLeft className="h-5 w-5" />
           </Button>
@@ -255,7 +256,7 @@ export default function ConversationDetailPage() {
                   </span>
                 </div>
                 <div className="p-3 bg-primary/5 rounded-lg">
-                  <p className="text-sm">{conversation.response}</p>
+                  <p className="text-sm">{conversation.response_display || conversation.response}</p>
                 </div>
               </div>
             </div>
@@ -313,7 +314,7 @@ export default function ConversationDetailPage() {
                         {new Date(req.created_at).toLocaleDateString()}
                       </p>
                     </div>
-                    <Link href={`/maintenance/${req.id}`}>
+                    <Link href={`/dashboard/maintenance/${req.id}`}>
                       <Button size="sm" variant="outline">
                         View
                       </Button>

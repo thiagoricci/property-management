@@ -6,7 +6,7 @@ Build an AI property manager that handles tenant communications and maintenance 
 
 ---
 
-## Current Status (2026-01-20)
+## Current Status (2026-01-21)
 
 ### Phase 1: Foundation
 
@@ -14,7 +14,7 @@ Build an AI property manager that handles tenant communications and maintenance 
 - **Step 2**: ✅ COMPLETED - Database schema designed and implemented
 - **Step 3**: ✅ COMPLETED - Basic API server (backend routes created, POST /api/messages endpoint complete)
 - **Step 4**: ✅ COMPLETED - ChatGPT AI integration (AI service, messages route, action execution)
-- **Step 5**: ⏳ NOT STARTED - Twilio SMS integration
+- **Step 5**: ✅ COMPLETED - Twilio SMS integration (webhook endpoint, SMS sending, conversation logging)
 - **Step 6**: ⏳ NOT STARTED - Action execution system (notifications via Twilio/Resend)
 
 ### Phase 2: Dashboard
@@ -42,6 +42,11 @@ Build an AI property manager that handles tenant communications and maintenance 
 - Database migration to support 'api' channel
 - Sample data seeding for testing
 - Successfully tested with emergency and maintenance scenarios
+- Twilio SMS integration (webhook endpoint, SMS sending, conversation logging)
+- SMS message parsing and tenant lookup
+- AI-powered contextual responses
+- Automatic maintenance request creation from SMS
+- Comprehensive error handling
 
 **Completed in Phase 2 Dashboard Implementation**:
 
@@ -53,11 +58,24 @@ Build an AI property manager that handles tenant communications and maintenance 
 - Database schema with all required tables and indexes
 - Protected routes and middleware for authentication
 
+**Recent Enhancement (2026-01-21)**:
+
+- Implemented JSON removal from AI responses in user-facing interfaces
+  - Added stripJSONFromResponse() method to aiService.js
+  - Updated POST /api/messages to return both full response and clean response_display
+  - Updated GET /conversations and GET /conversations/:id to return response_display
+  - Updated dashboard TypeScript types to include response_display field
+  - Updated conversation detail page to display clean responses
+  - Updated conversations list page to display clean responses
+  - SMS responses already had JSON removal (no changes needed)
+  - Database continues to store full responses with JSON for audit trail
+  - Verified dashboard shows clean AI responses without JSON blocks
+  - Created JSON_REMOVAL_IMPLEMENTATION.md documentation
+
 **Next Immediate Tasks**:
 
-1. Complete Step 5: Integrate Twilio SMS for real tenant communication
-2. Complete Step 6: Implement actual manager notifications (Twilio SMS/Resend email)
-3. Complete Steps 8-10: Build frontend UI pages for properties, maintenance requests, and conversations
+1. Complete Step 6: Implement actual manager notifications (Twilio SMS/Resend email)
+2. Complete Steps 11-15: Enhance AI context, emergency detection, and notification system
 
 ---
 
@@ -395,16 +413,16 @@ module.exports = { handleMessage };
 
 **Actions**:
 
-- [ ] Configure Twilio webhook to point to your server
-- [ ] Create endpoint: POST /webhooks/twilio/sms (receive SMS)
-- [ ] Parse incoming Twilio message format
-- [ ] Extract sender phone number and message body
-- [ ] Look up tenant by phone number
-- [ ] If no tenant found, send friendly "not recognized" message
-- [ ] Send incoming message to AI service
-- [ ] Send AI response back via Twilio
-- [ ] Log conversation to database
-- [ ] Test with your phone sending SMS
+- [x] Configure Twilio webhook to point to your server
+- [x] Create endpoint: POST /webhooks/twilio/sms (receive SMS)
+- [x] Parse incoming Twilio message format
+- [x] Extract sender phone number and message body
+- [x] Look up tenant by phone number
+- [x] If no tenant found, send friendly "not recognized" message
+- [x] Send incoming message to AI service
+- [x] Send AI response back via Twilio
+- [x] Log conversation to database
+- [x] Test with your phone sending SMS
 
 **Validation**: You can text the Twilio number and get AI responses on your phone
 
@@ -847,7 +865,7 @@ If you want to see something working ASAP, do these steps first:
 
 ### Day 2: Real Communication
 
-- [ ] Step 5: Integrate Twilio SMS
+- [x] Step 5: Integrate Twilio SMS
 - [x] Manually add 1 property and 1 tenant to database (via API or dashboard)
 
 **Goal**: Can text Twilio number and get AI response on phone

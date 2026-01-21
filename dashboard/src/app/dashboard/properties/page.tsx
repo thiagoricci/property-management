@@ -96,7 +96,7 @@ export default function PropertiesPage() {
                   {property.address}
                 </CardTitle>
                 <div className="flex gap-2">
-                  <Link href={`/properties/${property.id}/edit`}>
+                  <Link href={`/dashboard/properties/${property.id}/edit`}>
                     <Button variant="ghost" size="icon" className="h-8 w-8">
                       <Edit className="h-4 w-4" />
                     </Button>
@@ -129,7 +129,7 @@ export default function PropertiesPage() {
                     {property.owner_phone}
                   </span>
                 </div>
-                <Link href={`/properties/${property.id}`} className="block mt-4">
+                <Link href={`/dashboard/properties/${property.id}`} className="block mt-4">
                   <Button variant="outline" className="w-full">
                     View Details
                   </Button>

@@ -1,6 +1,7 @@
 const express = require("express");
 const db = require("../config/database");
 const authenticateToken = require("../middleware/auth");
+const aiService = require("../services/aiService");
 const router = express.Router();
 
 // Get all conversations with pagination and search
@@ -10,7 +11,7 @@ router.get("/", authenticateToken, async (req, res) => {
     const offset = (page - 1) * limit;
 
     let query = `
-      SELECT 
+      SELECT
         c.*,
         t.name as tenant_name,
         p.address as property_address
@@ -32,7 +33,14 @@ router.get("/", authenticateToken, async (req, res) => {
     params.push(parseInt(limit), offset);
 
     const result = await db.query(query, params);
-    res.json(result.rows);
+
+    // Strip JSON from responses for user display
+    const conversationsWithCleanResponse = result.rows.map(conv => ({
+      ...conv,
+      response_display: aiService.stripJSONFromResponse(conv.response)
+    }));
+
+    res.json(conversationsWithCleanResponse);
   } catch (error) {
     console.error("Get conversations error:", error);
     res.status(500).json({ error: "Failed to fetch conversations" });
@@ -45,7 +53,7 @@ router.get("/:id", authenticateToken, async (req, res) => {
     const { id } = req.params;
 
     const result = await db.query(
-      `SELECT 
+      `SELECT
         c.*,
         t.name as tenant_name,
         t.phone as tenant_phone,
@@ -62,6 +70,11 @@ router.get("/:id", authenticateToken, async (req, res) => {
       return res.status(404).json({ error: "Conversation not found" });
     }
 
+    const conversation = result.rows[0];
+
+    // Strip JSON from response for user display
+    const cleanResponse = aiService.stripJSONFromResponse(conversation.response);
+
     // Get related maintenance requests
     const maintenanceResult = await db.query(
       "SELECT * FROM maintenance_requests WHERE conversation_id = $1",
@@ -69,7 +82,8 @@ router.get("/:id", authenticateToken, async (req, res) => {
     );
 
     res.json({
-      ...result.rows[0],
+      ...conversation,
+      response_display: cleanResponse,
       related_maintenance: maintenanceResult.rows,
     });
   } catch (error) {

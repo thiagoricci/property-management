@@ -79,7 +79,7 @@ export default function PropertyDetailPage() {
   return (
     <div className="space-y-6">
       <div className="flex items-center gap-4">
-        <Link href="/properties">
+        <Link href="/dashboard/properties">
           <Button variant="ghost" size="icon">
             <ArrowLeft className="h-5 w-5" />
           </Button>
@@ -92,7 +92,7 @@ export default function PropertyDetailPage() {
             Manage property information and tenants
           </p>
         </div>
-        <Link href={`/properties/${property.id}/edit`}>
+        <Link href={`/dashboard/properties/${property.id}/edit`}>
           <Button variant="outline" className="flex items-center gap-2">
             <Edit className="h-4 w-4" />
             Edit Property
