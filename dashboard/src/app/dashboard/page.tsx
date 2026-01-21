@@ -140,30 +140,36 @@ export default function DashboardPage() {
           {stats?.recent_conversations && stats.recent_conversations.length > 0 ? (
             <div className="space-y-4">
               {stats.recent_conversations.slice(0, 5).map((conv) => (
-                <div
+                <Link
                   key={conv.id}
-                  className="flex items-start gap-4 p-4 rounded-lg bg-muted/50 hover:bg-muted transition-colors"
+                  href={`/dashboard/conversations?tenant=${conv.tenant_id}&tenantName=${encodeURIComponent(conv.tenant_name || 'Unknown')}`}
+                  className="block"
                 >
-                  <div className="flex-shrink-0">
-                    <MessageSquare className="h-5 w-5 text-primary mt-0.5" />
-                  </div>
-                  <div className="flex-1 min-w-0">
-                    <div className="flex items-center gap-2 mb-1">
-                      <span className="font-medium text-sm">
-                        {conv.tenant_name || "Unknown"}
-                      </span>
-                      <span className="text-xs text-muted-foreground">
-                        {new Date(conv.timestamp).toLocaleDateString()}
-                      </span>
-                      <span className="text-xs px-2 py-0.5 rounded-full bg-primary/10 text-primary">
-                        {conv.channel}
-                      </span>
+                  <div className="flex items-start gap-4 p-4 rounded-lg bg-muted/50 hover:bg-muted transition-colors">
+                    <div className="flex-shrink-0">
+                      <MessageSquare className="h-5 w-5 text-primary mt-0.5" />
                     </div>
-                    <p className="text-sm text-muted-foreground line-clamp-2">
-                      {conv.message}
-                    </p>
+                    <div className="flex-1 min-w-0">
+                      <div className="flex items-center gap-2 mb-1 flex-wrap">
+                        <span className="font-medium text-sm">
+                          {conv.tenant_name || "Unknown"}
+                        </span>
+                        <span className="text-xs px-2 py-0.5 rounded-full bg-primary/10 text-primary">
+                          {conv.message_count || 1} message{conv.message_count && conv.message_count > 1 ? 's' : ''}
+                        </span>
+                        <span className="text-xs text-muted-foreground">
+                          {new Date(conv.timestamp).toLocaleDateString()}
+                        </span>
+                        <span className="text-xs px-2 py-0.5 rounded-full bg-primary/10 text-primary">
+                          {conv.channel}
+                        </span>
+                      </div>
+                      <p className="text-sm text-muted-foreground line-clamp-2">
+                        {conv.message}
+                      </p>
+                    </div>
                   </div>
-                </div>
+                </Link>
               ))}
             </div>
           ) : (

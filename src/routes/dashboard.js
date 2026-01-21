@@ -27,14 +27,15 @@ router.get("/stats", async (req, res) => {
     );
     const urgentRequests = parseInt(urgentRequestsResult.rows[0].count);
 
-    // Get recent conversations
+    // Get recent conversations (grouped by tenant, showing most recent message)
     const recentConversationsResult = await db.query(`
-      SELECT 
+      SELECT DISTINCT ON (c.tenant_id)
         c.*,
-        t.name as tenant_name
+        t.name as tenant_name,
+        COUNT(*) OVER (PARTITION BY c.tenant_id) as message_count
       FROM conversations c
       LEFT JOIN tenants t ON c.tenant_id = t.id
-      ORDER BY c.timestamp DESC
+      ORDER BY c.tenant_id, c.timestamp DESC
       LIMIT 10
     `);
 

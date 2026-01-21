@@ -2,26 +2,31 @@
 
 ## Current Status
 
-**Phase**: Phase 1 Foundation Complete (Steps 1-6, 7-10)
+**Phase**: Phase 3 Enhancement In Progress (Steps 11-12, 13-15)
 **Last Updated**: 2026-01-21
 
 ## Current Work Focus
 
-Step 6: Action Execution - COMPLETED. Full notification system is now functional with:
+Step 12: Emergency Detection & Escalation - COMPLETED. Enhanced emergency detection and escalation system:
 
-- Resend email configuration for manager notifications
-- Notification service module with priority-based routing
-- Manager notifications for maintenance requests (SMS for emergency/urgent, email for normal/low)
-- Tenant confirmation messages after action execution
-- Database logging of all notifications
-- Comprehensive error handling for notification failures
+- Updated alertManager() function in webhooks.js and messages.js to use notification service
+- Emergency keyword detection already implemented (12 keywords: flood, fire, gas leak, no heat, no water, break-in, burst pipe, carbon monoxide, power outage, electrical fire, smoke)
+- Emergency protocols already in AI system prompt
+- Immediate SMS alerts sent via notification service for emergencies
+- All emergency notifications logged to database
 
 Previous completed work:
 
+- Steps 1-6: Foundation Complete (Core AI + SMS loop + Action execution)
 - Steps 8-10: Dashboard UI Implementation - COMPLETED. Full admin interface is now functional with:
   - Properties management (list, add, edit, delete, tenant management)
   - Maintenance request management (list with filters, detail view, status updates, notes)
   - Conversation history viewer (list with search, detail view, chat interface, flagging)
+- Step 11: AI Context Awareness - COMPLETED. Enhanced AI with:
+  - Open maintenance requests included in AI context (last 5 open/in-progress requests)
+  - Property-specific FAQ system created (faq column added to properties table)
+  - Context truncation logic implemented to stay within OpenAI token limits
+  - Conversation history increased from 10 to 15 messages for better context
 
 ## Recent Changes
 
@@ -111,6 +116,10 @@ Previous completed work:
   - Added tenant confirmation message builder with priority-specific templates
   - All notifications logged to database with error handling
   - Created STEP6_ACTION_EXECUTION_COMPLETE.md documentation
+- Completed migration 003_add_faq_to_properties.sql
+  - Successfully added faq JSONB column to properties table
+  - Database name: property_manager
+  - Migration enables property-specific FAQ storage for AI context awareness
 
 ## Next Steps
 

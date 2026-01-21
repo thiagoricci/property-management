@@ -24,9 +24,14 @@ Build an AI property manager that handles tenant communications and maintenance 
 - **Step 9**: ✅ COMPLETED - Maintenance request management UI (list with filters, detail view, status updates)
 - **Step 10**: ✅ COMPLETED - Conversation history viewer UI (list with search, detail view, chat interface)
 
-### Phase 3-5: Enhancement, Polish, Launch
+### Phase 3: Enhancement (Make It Smart)
 
-- **Steps 11-25**: ⏳ NOT STARTED
+- **Step 11**: ✅ COMPLETED - AI context awareness (property details, FAQs, open maintenance requests)
+- **Step 12**: ✅ COMPLETED - Emergency detection & escalation (keyword detection, immediate alerts)
+
+### Phase 4-5: Polish & Launch
+
+- **Steps 13-25**: ⏳ NOT STARTED
 
 ### Recent Progress Summary
 
@@ -79,11 +84,24 @@ Build an AI property manager that handles tenant communications and maintenance 
   - Updated alertManager to send actual emergency notifications
   - All notifications logged to database with error handling
   - Created STEP6_ACTION_EXECUTION_COMPLETE.md documentation
+- Completed Step 11: AI Context Awareness
+  - Open maintenance requests included in AI context (last 5 open/in-progress requests)
+  - Property-specific FAQ system created (faq column added to properties table)
+  - Context truncation logic implemented to stay within OpenAI token limits
+  - Conversation history increased from 10 to 15 messages for better context
+- Completed Step 12: Emergency Detection & Escalation
+  - Emergency keyword detection implemented (12 keywords)
+  - Immediate SMS alerts sent via notification service for emergencies
+  - All emergency notifications logged to database
+- Completed migration 003_add_faq_to_properties.sql
+  - Successfully added faq JSONB column to properties table
+  - Database name: property_manager
+  - Migration enables property-specific FAQ storage for AI context awareness
 
 **Next Immediate Tasks**:
 
 1. Configure Resend API key in .env file and test notification flows
-2. Complete Steps 11-15: Enhance AI context, emergency detection, and notification system
+2. Complete Steps 13-15: Add email communication, notification system, and analytics dashboard
 
 ---
 
@@ -552,12 +570,12 @@ module.exports = { handleMessage };
 
 **Actions**:
 
-- [ ] Load property details into AI context (address, amenities, rules)
-- [ ] Load tenant details (name, move-in date, lease terms)
-- [ ] Load open maintenance requests for context
-- [ ] Add property-specific FAQ to AI knowledge
-- [ ] Implement context truncation (keep under token limits)
-- [ ] Test AI with property-specific questions
+- [x] Load property details into AI context (address, amenities, rules)
+- [x] Load tenant details (name, move-in date, lease terms)
+- [x] Load open maintenance requests for context
+- [x] Add property-specific FAQ to AI knowledge
+- [x] Implement context truncation (keep under token limits)
+- [x] Test AI with property-specific questions
 
 **Validation**: AI can answer questions like "What's the WiFi password?" or "When does my lease end?"
 
@@ -569,9 +587,9 @@ module.exports = { handleMessage };
 
 **Actions**:
 
-- [ ] Define emergency keywords (flooding, fire, no heat, break-in, gas leak)
-- [ ] Enhance AI prompt with emergency protocols
-- [ ] Create immediate SMS alert for emergencies
+- [x] Define emergency keywords (flooding, fire, no heat, break-in, gas leak)
+- [x] Enhance AI prompt with emergency protocols
+- [x] Create immediate SMS alert for emergencies
 - [ ] Add emergency badge in dashboard
 - [ ] Create emergency response templates
 - [ ] Test with emergency scenarios

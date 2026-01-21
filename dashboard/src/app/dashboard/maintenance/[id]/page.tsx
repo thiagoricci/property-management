@@ -14,6 +14,7 @@ import {
   Save,
   MessageSquare,
   Flag,
+  Trash2,
 } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -79,6 +80,22 @@ export default function MaintenanceDetailPage() {
       alert("Failed to update notes");
     } finally {
       setIsSavingNotes(false);
+    }
+  };
+
+  const deleteRequest = async () => {
+    if (!request) return;
+
+    if (!confirm("Are you sure you want to delete this maintenance request? This action cannot be undone.")) {
+      return;
+    }
+
+    try {
+      await apiClient.delete(`/maintenance-requests/${request.id}`);
+      router.push("/dashboard/maintenance");
+    } catch (error) {
+      console.error("Failed to delete request:", error);
+      alert("Failed to delete request");
     }
   };
 
@@ -290,6 +307,14 @@ export default function MaintenanceDetailPage() {
                 Reopen Request
               </Button>
             )}
+            <Button
+              variant="destructive"
+              onClick={deleteRequest}
+              className="flex items-center gap-2"
+            >
+              <Trash2 className="h-4 w-4" />
+              Delete Request
+            </Button>
             {isUpdatingStatus && (
               <p className="text-sm text-muted-foreground self-center">
                 Updating status...

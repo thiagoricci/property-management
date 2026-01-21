@@ -24,6 +24,8 @@ export interface Conversation {
   id: number;
   tenant_id: number;
   tenant_name?: string;
+  tenant_email?: string;
+  property_address?: string;
   channel: "sms" | "email" | "whatsapp";
   message: string;
   response: string;
@@ -31,6 +33,20 @@ export interface Conversation {
   ai_actions?: any;
   timestamp: string;
   flagged?: boolean;
+  subject?: string;
+  attachments?: Attachment[];
+  message_count?: number; // Total number of messages from this tenant
+}
+
+export interface Attachment {
+  id: number;
+  conversation_id: number;
+  filename: string;
+  stored_filename: string;
+  content_type: string;
+  size: number;
+  url: string;
+  created_at: string;
 }
 
 export interface MaintenanceRequest {

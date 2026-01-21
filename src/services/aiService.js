@@ -11,15 +11,19 @@ class AIService {
    * @param {Object} tenantInfo - Tenant details
    * @param {Array} conversationHistory - Previous messages
    * @param {String} newMessage - New message from tenant
+   * @param {Array} openMaintenanceRequests - Open maintenance requests for tenant
    * @returns {String} AI response
    */
-  async generateResponse(propertyInfo, tenantInfo, conversationHistory, newMessage) {
+  async generateResponse(propertyInfo, tenantInfo, conversationHistory, newMessage, openMaintenanceRequests = []) {
     try {
-      const systemPrompt = this.buildSystemPrompt(propertyInfo, tenantInfo);
+      const systemPrompt = this.buildSystemPrompt(propertyInfo, tenantInfo, openMaintenanceRequests);
+
+      // Apply context truncation to stay within token limits
+      const truncatedHistory = this.truncateContext(conversationHistory, systemPrompt, newMessage);
 
       const messages = [
         { role: "system", content: systemPrompt },
-        ...conversationHistory,
+        ...truncatedHistory,
         { role: "user", content: newMessage },
       ];
 
@@ -43,9 +47,10 @@ class AIService {
    * Build system prompt with property and tenant context
    * @param {Object} propertyInfo - Property details
    * @param {Object} tenantInfo - Tenant details
+   * @param {Array} openMaintenanceRequests - Open maintenance requests for tenant
    * @returns {String} System prompt
    */
-  buildSystemPrompt(propertyInfo, tenantInfo) {
+  buildSystemPrompt(propertyInfo, tenantInfo, openMaintenanceRequests = []) {
     const propertyContext = propertyInfo ? `
 Property: ${propertyInfo.address}
 Owner: ${propertyInfo.owner_name}
@@ -60,6 +65,24 @@ Phone: ${tenantInfo.phone || "Not provided"}
 Lease Terms: ${JSON.stringify(tenantInfo.lease_terms || {})}
 Move-in Date: ${tenantInfo.move_in_date || "Not specified"}
     ` : "Tenant information not available";
+
+    // Build open maintenance requests context
+    let maintenanceContext = "";
+    if (openMaintenanceRequests && openMaintenanceRequests.length > 0) {
+      maintenanceContext = "\n\nOpen Maintenance Requests:\n";
+      openMaintenanceRequests.forEach((req, index) => {
+        maintenanceContext += `${index + 1}. ${req.issue_description} (Priority: ${req.priority}, Status: ${req.status})\n`;
+      });
+    }
+
+    // Build FAQ context
+    let faqContext = "";
+    if (propertyInfo && propertyInfo.faq && Object.keys(propertyInfo.faq).length > 0) {
+      faqContext = "\n\nProperty-Specific FAQ:\n";
+      Object.entries(propertyInfo.faq).forEach(([key, value]) => {
+        faqContext += `- ${key}: ${value}\n`;
+      });
+    }
 
     return `You are Alice, an AI property manager. Your role is to assist tenants with their questions, concerns, and requests.
 
@@ -94,6 +117,33 @@ For emergency situations, you MUST also include this JSON object at the END of y
   "reason": "brief reason for emergency"
 }
 
+CRITICAL INSTRUCTIONS:
+1. Include ONLY ONE JSON block per action type. Do not repeat the same action multiple times.
+2. Do NOT include conversational text like "Maintenance Request:" or "I'll create a maintenance request" in your response.
+3. Simply provide your helpful response, and include the JSON action block at the very END.
+
+Examples:
+✅ CORRECT (one maintenance request):
+"I understand you're having an electrical issue. I'll have our maintenance team investigate this promptly.
+{
+  "action": "maintenance_request",
+  "priority": "urgent",
+  "description": "Power outage in unit"
+}"
+
+❌ INCORRECT (duplicate maintenance requests):
+"I'll create a maintenance request for your issue.
+{
+  "action": "maintenance_request",
+  "priority": "urgent",
+  "description": "Power outage in unit"
+}
+{
+  "action": "maintenance_request",
+  "priority": "urgent",
+  "description": "Electrical outage in apartment"
+}"
+
 Always be friendly, professional, and helpful. If you're unsure about something, ask clarifying questions rather than making assumptions.
 
 Remember: Always include the JSON action block at the very END of your response, after your conversational text.`;
@@ -126,6 +176,35 @@ Remember: Always include the JSON action block at the very END of your response,
     }
 
     return actions;
+  }
+
+  /**
+   * Deduplicate actions to prevent duplicate maintenance requests
+   * @param {Array} actions - Array of extracted actions
+   * @returns {Array} Deduplicated array of actions
+   */
+  deduplicateActions(actions) {
+    const uniqueActions = [];
+    const seen = new Set();
+
+    for (const action of actions) {
+      // Create unique key based on action type, description, and priority
+      const key = `${action.action}:${action.description || ''}:${action.priority || ''}`;
+
+      if (!seen.has(key)) {
+        seen.add(key);
+        uniqueActions.push(action);
+      } else {
+        console.log(`[Action Deduplication] Removing duplicate action: ${key}`);
+      }
+    }
+
+    // Log deduplication statistics
+    if (actions.length > uniqueActions.length) {
+      console.log(`[Action Deduplication] Removed ${actions.length - uniqueActions.length} duplicate action(s) from ${actions.length} total`);
+    }
+
+    return uniqueActions;
   }
 
   /**
@@ -184,10 +263,64 @@ Remember: Always include the JSON action block at the very END of your response,
     // Remove JSON action blocks (all JSON objects in the response)
     let cleaned = response.replace(/\{[\s\S]*?\}/g, "").trim();
     
+    // Remove specific phrases that indicate maintenance request creation
+    // These are the exact phrases we want to remove, not broader patterns
+    const phrasesToRemove = [
+      /Maintenance Request:?\s*$/gi,  // At end of sentence, with optional trailing spaces
+      /I'll create a maintenance request for your issue\./gi,  // Specific phrase
+      /I am creating a maintenance request for your issue\./gi,  // Specific phrase
+      /I will create a maintenance request for your issue\./gi,  // Specific phrase
+      /I'm creating a maintenance request for your issue\./gi,  // Specific phrase
+      /Creating maintenance request for your issue\./gi,  // Specific phrase
+      /Maintenance request created for your issue\./gi,  // Specific phrase
+    ];
+
+    phrasesToRemove.forEach(regex => {
+      cleaned = cleaned.replace(regex, "");
+    });
+
     // Remove extra whitespace and newlines
     cleaned = cleaned.replace(/\s+/g, " ");
     
     return cleaned;
+  }
+
+  /**
+   * Truncate conversation history to stay within token limits
+   * @param {Array} conversationHistory - Previous messages
+   * @param {String} systemPrompt - System prompt
+   * @param {String} newMessage - New message from tenant
+   * @returns {Array} Truncated conversation history
+   */
+  truncateContext(conversationHistory, systemPrompt, newMessage) {
+    // Approximate token count (rough estimate: 1 token ≈ 4 characters)
+    const systemTokens = (systemPrompt.length / 4);
+    const messageTokens = (newMessage.length / 4);
+    
+    // GPT-3.5-turbo has 16,385 tokens, reserve 2,000 for response
+    const maxHistoryTokens = 16385 - systemTokens - messageTokens - 2000;
+    
+    // Calculate how many conversation messages we can include
+    let currentTokens = 0;
+    const truncatedHistory = [];
+    
+    for (const msg of conversationHistory) {
+      const msgTokens = (msg.content.length / 4);
+      
+      if (currentTokens + msgTokens > maxHistoryTokens) {
+        break;
+      }
+      
+      truncatedHistory.push(msg);
+      currentTokens += msgTokens;
+    }
+    
+    // Log truncation for monitoring
+    if (truncatedHistory.length < conversationHistory.length) {
+      console.log(`Context truncated: ${conversationHistory.length} messages → ${truncatedHistory.length} messages`);
+    }
+    
+    return truncatedHistory;
   }
 }
 

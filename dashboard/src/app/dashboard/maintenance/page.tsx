@@ -13,9 +13,12 @@ import {
   XCircle,
   ArrowRight,
   Plus,
+  Trash2,
 } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
+import { Badge } from "@/components/ui/badge";
+import { Skeleton } from "@/components/ui/skeleton";
 import Link from "next/link";
 
 export default function MaintenanceRequestsPage() {
@@ -65,31 +68,31 @@ export default function MaintenanceRequestsPage() {
     }
   };
 
-  const getPriorityColor = (priority: string) => {
+  const getPriorityVariant = (priority: string) => {
     switch (priority) {
       case "emergency":
-        return "text-red-600 bg-red-50 dark:bg-red-950 dark:text-red-400";
+        return "destructive";
       case "urgent":
-        return "text-orange-600 bg-orange-50 dark:bg-orange-950 dark:text-orange-400";
+        return "destructive"; // Or add an 'orange' variant to Badge
       case "normal":
-        return "text-yellow-600 bg-yellow-50 dark:bg-yellow-950 dark:text-yellow-400";
+        return "secondary";
       case "low":
-        return "text-blue-600 bg-blue-50 dark:bg-blue-950 dark:text-blue-400";
+        return "outline";
       default:
-        return "text-gray-600 bg-gray-50 dark:bg-gray-950 dark:text-gray-400";
+        return "outline";
     }
   };
 
-  const getStatusColor = (status: string) => {
+  const getStatusVariant = (status: string) => {
     switch (status) {
       case "open":
-        return "text-green-600 bg-green-50 dark:bg-green-950 dark:text-green-400";
+        return "success";
       case "in_progress":
-        return "text-blue-600 bg-blue-50 dark:bg-blue-950 dark:text-blue-400";
+        return "info";
       case "resolved":
-        return "text-gray-600 bg-gray-50 dark:bg-gray-950 dark:text-gray-400";
+        return "secondary";
       default:
-        return "text-gray-600 bg-gray-50 dark:bg-gray-950 dark:text-gray-400";
+        return "outline";
     }
   };
 
@@ -107,12 +110,45 @@ export default function MaintenanceRequestsPage() {
     }
   };
 
+  const deleteRequest = async (id: number) => {
+    if (!confirm("Are you sure you want to delete this maintenance request? This action cannot be undone.")) {
+      return;
+    }
+
+    try {
+      await apiClient.delete(`/maintenance-requests/${id}`);
+      setRequests(requests.filter((r) => r.id !== id));
+    } catch (error) {
+      console.error("Failed to delete request:", error);
+      alert("Failed to delete request");
+    }
+  };
+
   if (isLoading) {
     return (
-      <div className="flex items-center justify-center h-64">
-        <div className="text-lg text-muted-foreground">
-          Loading maintenance requests...
+      <div className="space-y-4">
+        <div className="flex justify-between items-center">
+             <Skeleton className="h-10 w-48" />
+             <div className="flex gap-2">
+                 <Skeleton className="h-10 w-24" />
+                 <Skeleton className="h-10 w-32" />
+             </div>
         </div>
+        {[1, 2, 3].map((i) => (
+          <div key={i} className="p-6 border rounded-lg bg-card text-card-foreground shadow-sm">
+             <div className="flex gap-4">
+                 <Skeleton className="h-6 w-20 rounded-full" />
+                 <div className="flex-1 space-y-2">
+                     <Skeleton className="h-6 w-3/4" />
+                     <div className="flex gap-4">
+                         <Skeleton className="h-4 w-32" />
+                         <Skeleton className="h-4 w-32" />
+                         <Skeleton className="h-4 w-32" />
+                     </div>
+                 </div>
+             </div>
+          </div>
+        ))}
       </div>
     );
   }
@@ -223,51 +259,43 @@ export default function MaintenanceRequestsPage() {
               className="hover:shadow-lg transition-shadow"
             >
               <CardContent className="p-6">
-                <div className="flex items-start gap-4">
-                  {/* Priority Badge */}
-                  <div
-                    className={`flex-shrink-0 px-3 py-1 rounded-full text-xs font-semibold uppercase ${getPriorityColor(
-                      request.priority
-                    )}`}
-                  >
-                    {request.priority}
-                  </div>
+                  <div className="flex items-start gap-4">
+                    {/* Priority Badge */}
+                    <Badge variant={getPriorityVariant(request.priority) as any} className="uppercase shrink-0">
+                      {request.priority}
+                    </Badge>
 
-                  <div className="flex-1 min-w-0">
-                    <div className="flex items-start justify-between gap-4 mb-3">
-                      <div className="flex-1 min-w-0">
-                        <h3 className="font-semibold text-lg mb-2 line-clamp-2">
-                          {request.issue_description}
-                        </h3>
-                        <div className="flex flex-wrap items-center gap-3 text-sm text-muted-foreground">
-                          <div className="flex items-center gap-1">
-                            <Building2 className="h-3 w-3" />
-                            <span className="line-clamp-1">
-                              {request.property_address || "Unknown Property"}
-                            </span>
-                          </div>
-                          <div className="flex items-center gap-1">
-                            <User className="h-3 w-3" />
-                            <span>{request.tenant_name || "Unknown"}</span>
-                          </div>
-                          <div className="flex items-center gap-1">
-                            <Clock className="h-3 w-3" />
-                            <span>
-                              {new Date(request.created_at).toLocaleDateString()}
-                            </span>
+                    <div className="flex-1 min-w-0">
+                      <div className="flex items-start justify-between gap-4 mb-3">
+                        <div className="flex-1 min-w-0">
+                          <h3 className="font-semibold text-lg mb-2 line-clamp-2">
+                            {request.issue_description}
+                          </h3>
+                          <div className="flex flex-wrap items-center gap-3 text-sm text-muted-foreground">
+                            <div className="flex items-center gap-1">
+                              <Building2 className="h-3 w-3" />
+                              <span className="line-clamp-1">
+                                {request.property_address || "Unknown Property"}
+                              </span>
+                            </div>
+                            <div className="flex items-center gap-1">
+                              <User className="h-3 w-3" />
+                              <span>{request.tenant_name || "Unknown"}</span>
+                            </div>
+                            <div className="flex items-center gap-1">
+                              <Clock className="h-3 w-3" />
+                              <span>
+                                {new Date(request.created_at).toLocaleDateString()}
+                              </span>
+                            </div>
                           </div>
                         </div>
-                      </div>
 
-                      {/* Status Badge */}
-                      <div
-                        className={`flex-shrink-0 px-3 py-1 rounded-full text-xs font-semibold uppercase ${getStatusColor(
-                          request.status
-                        )}`}
-                      >
-                        {request.status.replace("_", " ")}
+                        {/* Status Badge */}
+                        <Badge variant={getStatusVariant(request.status) as any} className="uppercase shrink-0">
+                            {request.status.replace("_", " ")}
+                        </Badge>
                       </div>
-                    </div>
 
                     {/* Actions */}
                     <div className="flex items-center justify-between mt-4 pt-4 border-t">
@@ -305,6 +333,15 @@ export default function MaintenanceRequestsPage() {
                             Reopen
                           </Button>
                         )}
+                        <Button
+                          size="sm"
+                          variant="destructive"
+                          onClick={() => deleteRequest(request.id)}
+                          className="flex items-center gap-1"
+                        >
+                          <Trash2 className="h-3 w-3" />
+                          Delete
+                        </Button>
                       </div>
                       <Link href={`/dashboard/maintenance/${request.id}`}>
                         <Button size="sm" className="flex items-center gap-1">

@@ -42,7 +42,7 @@ export default function DashboardLayout({
   }
 
   const navigation = [
-    { name: "Overview", href: "/dashboard", icon: Home },
+    { name: "Dashboard", href: "/dashboard", icon: Home },
     { name: "Properties", href: "/dashboard/properties", icon: Building2 },
     { name: "Maintenance", href: "/dashboard/maintenance", icon: Wrench },
     { name: "Conversations", href: "/dashboard/conversations", icon: MessageSquare },

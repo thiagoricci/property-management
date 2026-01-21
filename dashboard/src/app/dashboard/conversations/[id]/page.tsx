@@ -16,6 +16,8 @@ import {
   Flag,
   AlertTriangle,
   Wrench,
+  Paperclip,
+  Download,
 } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -233,9 +235,43 @@ export default function ConversationDetailPage() {
                     {new Date(conversation.timestamp).toLocaleTimeString()}
                   </span>
                 </div>
+                {conversation.channel === "email" && conversation.subject && (
+                  <div className="mb-2 p-2 bg-muted/30 rounded">
+                    <p className="text-xs text-muted-foreground font-medium">Subject: {conversation.subject}</p>
+                  </div>
+                )}
                 <div className="p-3 bg-muted/50 rounded-lg">
                   <p className="text-sm">{conversation.message}</p>
                 </div>
+                {conversation.attachments && conversation.attachments.length > 0 && (
+                  <div className="mt-3 space-y-2">
+                    <div className="flex items-center gap-2 text-xs text-muted-foreground">
+                      <Paperclip className="h-3 w-3" />
+                      <span>Attachments ({conversation.attachments.length})</span>
+                    </div>
+                    <div className="grid gap-2 grid-cols-2 md:grid-cols-4">
+                      {conversation.attachments.map((attachment) => (
+                        <a
+                          key={attachment.id}
+                          href={attachment.url}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="flex items-center gap-2 p-3 bg-muted/50 rounded hover:bg-muted/80 transition-colors"
+                        >
+                          <Download className="h-4 w-4 text-muted-foreground" />
+                          <div className="flex-1 min-w-0">
+                            <p className="text-xs font-medium truncate">
+                              {attachment.filename}
+                            </p>
+                            <p className="text-xs text-muted-foreground">
+                              {(attachment.size / 1024).toFixed(1)} KB
+                            </p>
+                          </div>
+                        </a>
+                      ))}
+                    </div>
+                  </div>
+                )}
               </div>
             </div>
           </CardContent>

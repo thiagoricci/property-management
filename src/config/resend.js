@@ -1,8 +1,9 @@
 const { Resend } = require("resend");
+const crypto = require("crypto");
 
 /**
  * Resend email configuration
- * Handles email sending for manager notifications
+ * Handles email sending for manager notifications and inbound email webhooks
  */
 
 // Validate required environment variables
@@ -44,7 +45,57 @@ async function sendEmail(to, subject, text, html = null) {
   }
 }
 
+/**
+ * Verify Resend webhook signature
+ * @param {String} signature - X-Resend-Signature header
+ * @param {String} payload - Request body as string
+ * @returns {Boolean} True if signature is valid
+ */
+function verifyWebhookSignature(signature, payload) {
+  if (!process.env.RESEND_INBOUND_WEBHOOK_SECRET) {
+    console.warn("WARNING: Webhook signature verification disabled. Set RESEND_INBOUND_WEBHOOK_SECRET in .env");
+    return true;
+  }
+
+  if (!signature) {
+    console.error("Missing webhook signature");
+    return false;
+  }
+
+  try {
+    // Resend uses HMAC-SHA256 for webhook signatures
+    // The signature format is: t=timestamp,v1=hash
+    const signatureParts = signature.split(",");
+    const timestamp = signatureParts[0].split("=")[1];
+    const hash = signatureParts[1].split("=")[1];
+
+    // Check timestamp is within 5 minutes to prevent replay attacks
+    const now = Math.floor(Date.now() / 1000);
+    const timestampAge = now - parseInt(timestamp);
+    if (timestampAge > 300) {
+      console.error("Webhook signature timestamp too old");
+      return false;
+    }
+
+    // Compute expected signature
+    const expectedSignature = crypto
+      .createHmac("sha256", process.env.RESEND_INBOUND_WEBHOOK_SECRET)
+      .update(`${timestamp}.${payload}`)
+      .digest("hex");
+
+    // Use timing-safe comparison to prevent timing attacks
+    return crypto.timingSafeEqual(
+      Buffer.from(hash),
+      Buffer.from(expectedSignature),
+    );
+  } catch (error) {
+    console.error("Error verifying webhook signature:", error);
+    return false;
+  }
+}
+
 module.exports = {
   resend,
   sendEmail,
+  verifyWebhookSignature,
 };

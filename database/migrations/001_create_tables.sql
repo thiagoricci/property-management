@@ -81,7 +81,7 @@ CREATE INDEX IF NOT EXISTS idx_maintenance_priority ON maintenance_requests(prio
 INSERT INTO users (email, password_hash, name)
 VALUES (
   'admin@example.com',
-  '$2a$10$YourHashedPasswordHere',
+  '$2a$10$g5UMcJrwWuZgAfnQYsTdTONB2Qtp9DG3DyL2Yr7yImXcHe5FkMRfS',
   'Admin User'
 )
 ON CONFLICT (email) DO NOTHING;

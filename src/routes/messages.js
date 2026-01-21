@@ -39,13 +39,24 @@ router.post("/", async (req, res) => {
 
     const property = propertyResult.rows[0] || null;
 
-    // Load conversation history (last 10 messages)
+    // Load conversation history (last 15 messages - increased for better context)
     const historyResult = await db.query(
       `SELECT message, response
        FROM conversations
        WHERE tenant_id = $1
        ORDER BY timestamp DESC
-       LIMIT 10`,
+       LIMIT 15`,
+      [tenant_id]
+    );
+
+    // Load open maintenance requests for context
+    const maintenanceResult = await db.query(
+      `SELECT issue_description, priority, status
+       FROM maintenance_requests
+       WHERE tenant_id = $1
+       AND status IN ('open', 'in_progress')
+       ORDER BY created_at DESC
+       LIMIT 5`,
       [tenant_id]
     );
 
@@ -54,16 +65,20 @@ router.post("/", async (req, res) => {
       historyResult.rows
     );
 
-    // Generate AI response
+    // Generate AI response with open maintenance requests context
     const aiResponse = await aiService.generateResponse(
       property,
       tenant,
       conversationHistory,
-      message
+      message,
+      maintenanceResult.rows
     );
 
     // Extract actions from AI response
     const actions = aiService.extractActions(aiResponse);
+
+    // Deduplicate actions to prevent duplicate maintenance requests
+    const deduplicatedActions = aiService.deduplicateActions(actions);
 
     // Log conversation to database
     const conversationResult = await db.query(
@@ -83,7 +98,7 @@ router.post("/", async (req, res) => {
 
     // Execute actions (maintenance requests, alerts, etc.)
     const executedActions = [];
-    for (const action of actions) {
+    for (const action of deduplicatedActions) {
       try {
         const result = await executeAction(
           action,
@@ -106,6 +121,7 @@ router.post("/", async (req, res) => {
       response: aiResponse,
       response_display: cleanResponse,
       actions: executedActions,
+      deduplicated_from: actions.length,
       conversation: savedConversation,
     });
   } catch (error) {
@@ -116,6 +132,44 @@ router.post("/", async (req, res) => {
     });
   }
 });
+
+/**
+ * Check for recent duplicate maintenance requests
+ * @param {Number} tenantId - Tenant ID
+ * @param {String} priority - Priority level
+ * @param {String} description - Issue description
+ * @returns {Object|null} Recent duplicate request or null
+ */
+async function checkForRecentDuplicate(tenantId, priority, description) {
+  const result = await db.query(
+    `SELECT * FROM maintenance_requests
+     WHERE tenant_id = $1
+     AND priority = $2
+     AND created_at > NOW() - INTERVAL '5 minutes'
+     ORDER BY created_at DESC
+     LIMIT 1`,
+    [tenantId, priority]
+  );
+
+  if (result.rows.length > 0) {
+    const recent = result.rows[0];
+    // Simple similarity check: if descriptions share key words
+    const recentWords = new Set(recent.issue_description.toLowerCase().split(/\s+/));
+    const newWords = new Set(description.toLowerCase().split(/\s+/));
+    const intersection = [...recentWords].filter(word => newWords.has(word));
+
+    // If 50%+ words match, consider it a duplicate
+    if (intersection.length / Math.max(recentWords.size, newWords.size) >= 0.5) {
+      console.log(`[Time-Based Deduplication] Skipping duplicate request for tenant ${tenantId}`);
+      console.log(`  Recent: "${recent.issue_description}"`);
+      console.log(`  New: "${description}"`);
+      console.log(`  Similarity: ${(intersection.length / Math.max(recentWords.size, newWords.size) * 100).toFixed(0)}%`);
+      return recent;
+    }
+  }
+
+  return null;
+}
 
 /**
  * Execute action extracted from AI response
@@ -152,6 +206,19 @@ async function createMaintenanceRequest(action, tenantId, propertyId, conversati
 
   if (!priority || !description) {
     throw new Error("Missing required fields for maintenance request");
+  }
+
+  // Check for recent duplicate maintenance requests
+  const recentDuplicate = await checkForRecentDuplicate(tenantId, priority, description);
+  if (recentDuplicate) {
+    console.log(`[Maintenance Request] Skipping duplicate creation. Returning existing request: ${recentDuplicate.id}`);
+    return {
+      type: "maintenance_request",
+      request_id: recentDuplicate.id,
+      priority,
+      status: "duplicate",
+      existing_request: true,
+    };
   }
 
   // Create maintenance request in database
@@ -225,7 +292,10 @@ function buildTenantConfirmation(priority) {
 async function alertManager(action, tenantId, propertyId) {
   const { urgency, reason } = action;
 
-  // Load tenant and property details
+  console.log(`ALERT MANAGER: ${urgency} - ${reason}`);
+  console.log(`Tenant ID: ${tenantId}, Property ID: ${propertyId}`);
+
+  // Load tenant and property details for notification
   const tenantResult = await db.query(
     "SELECT * FROM tenants WHERE id = $1",
     [tenantId]
@@ -242,14 +312,14 @@ async function alertManager(action, tenantId, propertyId) {
   const tenant = tenantResult.rows[0];
   const property = propertyResult.rows[0];
 
-  // Send emergency notification
+  // Send emergency notification via notification service
   const result = await notificationService.notifyManagerOfEmergency(
     reason,
     tenant,
     property
   );
 
-  console.log(`Emergency alert sent: ${urgency} - ${reason}`);
+  console.log(`Emergency alert sent: ${result.success ? "SUCCESS" : "FAILED"}`);
 
   return {
     type: "alert_manager",
