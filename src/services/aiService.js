@@ -44,6 +44,47 @@ class AIService {
   }
 
   /**
+   * Generate AI response with thread analysis
+   * @param {Object} propertyInfo - Property details
+   * @param {Object} tenantInfo - Tenant details
+   * @param {Array} conversationHistory - Previous messages
+   * @param {String} newMessage - New message from tenant
+   * @param {Array} openMaintenanceRequests - Open maintenance requests for tenant
+   * @param {Object} currentThread - Current active thread (if any)
+   * @returns {Object} { response, topicAnalysis, resolutionAnalysis }
+   */
+  async generateResponseWithAnalysis(propertyInfo, tenantInfo, conversationHistory, newMessage, openMaintenanceRequests = [], currentThread) {
+    // Generate AI response
+    const response = await this.generateResponse(
+      propertyInfo,
+      tenantInfo,
+      conversationHistory,
+      newMessage,
+      openMaintenanceRequests
+    );
+
+    // Analyze topic change
+    const topicAnalysis = await this.detectTopicChange(
+      newMessage,
+      currentThread,
+      conversationHistory
+    );
+
+    // Detect resolution
+    const resolutionAnalysis = await this.detectConversationResolution(
+      response,
+      null, // No new message yet
+      conversationHistory
+    );
+
+    return {
+      response,
+      topicAnalysis,
+      resolutionAnalysis
+    };
+  }
+
+  /**
    * Build system prompt with property and tenant context
    * @param {Object} propertyInfo - Property details
    * @param {Object} tenantInfo - Tenant details
@@ -209,20 +250,19 @@ Remember: Always include the JSON action block at the very END of your response,
 
   /**
    * Format conversation history for OpenAI API
-   * @param {Array} conversations - Array of conversation records
+   * @param {Array} messages - Array of message records
    * @returns {Array} Formatted message array
    */
-  formatConversationHistory(conversations) {
+  formatConversationHistory(messages) {
     const history = [];
-    
-    // Reverse to get chronological order
-    const reversed = [...conversations].reverse();
-    
-    for (const conv of reversed) {
-      history.push(
-        { role: "user", content: conv.message },
-        { role: "assistant", content: conv.response }
-      );
+
+    // Messages are already in chronological order from query
+    for (const msg of messages) {
+      if (msg.message_type === 'user_message') {
+        history.push({ role: "user", content: msg.message });
+      } else if (msg.message_type === 'ai_response') {
+        history.push({ role: "assistant", content: msg.response });
+      }
     }
 
     return history;
@@ -321,6 +361,194 @@ Remember: Always include the JSON action block at the very END of your response,
     }
     
     return truncatedHistory;
+  }
+
+  /**
+   * Analyze if message continues current conversation or starts new topic
+   * @param {String} newMessage - New tenant message
+   * @param {Object} currentThread - Current active thread (if any)
+   * @param {Array} recentMessages - Recent messages in current thread
+   * @returns {Object} { shouldContinue: boolean, newSubject: string|null, confidence: number }
+   */
+  async detectTopicChange(newMessage, currentThread, recentMessages) {
+    if (!currentThread) {
+      // No active thread, create new one
+      const subject = await this.extractSubject(newMessage);
+      return { shouldContinue: false, newSubject: subject, confidence: 1.0 };
+    }
+
+    // Check time gap (if > 24 hours, likely new topic)
+    const lastMessageTime = new Date(currentThread.last_activity_at);
+    const timeSinceLastMessage = Date.now() - lastMessageTime.getTime();
+    const hoursSinceLastMessage = timeSinceLastMessage / (1000 * 60 * 60);
+
+    if (hoursSinceLastMessage > 24) {
+      const subject = await this.extractSubject(newMessage);
+      console.log(`[Topic Detection] Time gap (${hoursSinceLastMessage.toFixed(1)}h) - creating new thread`);
+      return { shouldContinue: false, newSubject: subject, confidence: 0.9 };
+    }
+
+    // Use AI to analyze topic similarity
+    const analysis = await this.analyzeTopicSimilarity(
+      newMessage,
+      currentThread.subject,
+      recentMessages
+    );
+
+    console.log(`[Topic Detection] ${analysis.should_continue ? 'Continue' : 'New thread'} (confidence: ${analysis.confidence})`);
+    return analysis;
+  }
+
+  /**
+   * Use AI to analyze if message continues current topic
+   * @param {String} newMessage - New tenant message
+   * @param {String} currentSubject - Current thread subject
+   * @param {Array} recentMessages - Recent messages in thread
+   * @returns {Object} { shouldContinue: boolean, confidence: number, newSubject: string|null }
+   */
+  async analyzeTopicSimilarity(newMessage, currentSubject, recentMessages) {
+    const recentContext = recentMessages
+      .slice(-3)
+      .map(m => `${m.message_type}: ${m.message}`)
+      .join('\n');
+
+    const prompt = `You are analyzing conversation flow.
+
+Current conversation subject: "${currentSubject}"
+
+Recent messages:
+${recentContext}
+
+New tenant message: "${newMessage}"
+
+Analyze if this new message continues the same topic or starts a new subject.
+
+Return JSON:
+{
+  "should_continue": true or false,
+  "confidence": 0.0-1.0,
+  "reasoning": "brief explanation",
+  "new_subject": "new subject if should_continue is false, else null"
+}
+
+Guidelines:
+- If message asks clarifying questions about current issue → continue
+- If message provides more details about current issue → continue
+- If message confirms resolution or says thanks → continue
+- If message mentions completely different issue → new subject
+- If message is unrelated greeting/small talk → continue (treat as same thread)
+- Confidence < 0.6 → create new thread
+- Confidence >= 0.6 → continue current thread`;
+
+    try {
+      const response = await openai.chat.completions.create({
+        model: "gpt-3.5-turbo",
+        messages: [{ role: "user", content: prompt }],
+        response_format: { type: "json_object" },
+        max_tokens: 300,
+      });
+
+      return JSON.parse(response.choices[0].message.content);
+    } catch (error) {
+      console.error("Topic analysis error:", error);
+      // On error, continue current thread (safer default)
+      return { should_continue: true, confidence: 0.5, reasoning: "Analysis failed", new_subject: null };
+    }
+  }
+
+  /**
+   * Extract subject/topic from message
+   * @param {String} message - Tenant message
+   * @returns {String} Subject line
+   */
+  async extractSubject(message) {
+    const prompt = `Extract a brief subject line (max 10 words) from this tenant message:
+
+"${message}"
+
+Return only the subject line, nothing else. Examples:
+- "My sink is leaking" → "Leaky sink"
+- "AC not working" → "AC not working"
+- "Question about rent" → "Rent inquiry"
+- "Parking spot issue" → "Parking issue"`;
+
+    try {
+      const response = await openai.chat.completions.create({
+        model: "gpt-3.5-turbo",
+        messages: [{ role: "user", content: prompt }],
+        max_tokens: 50,
+        temperature: 0.3,
+      });
+
+      return response.choices[0].message.content.trim();
+    } catch (error) {
+      console.error("Subject extraction error:", error);
+      // Fallback: use first 50 characters
+      return message.substring(0, 50) + (message.length > 50 ? "..." : "");
+    }
+  }
+
+  /**
+   * Detect if conversation is resolved
+   * @param {String} lastResponse - Last AI response
+   * @param {String} newMessage - New tenant message (if any)
+   * @param {Array} messages - All messages in thread
+   * @returns {Object} { isResolved: boolean, confidence: number }
+   */
+  async detectConversationResolution(lastResponse, newMessage, messages) {
+    // If tenant sends "thanks", "ok", "got it", etc. after resolution
+    if (newMessage) {
+      const closingPhrases = [
+        'thanks', 'thank you', 'ok', 'got it', 'understood',
+        'appreciate it', 'perfect', 'great', 'sounds good',
+        'that works', 'all set', 'good to know'
+      ];
+      const lowerMessage = newMessage.toLowerCase();
+      if (closingPhrases.some(phrase => lowerMessage.includes(phrase))) {
+        console.log(`[Resolution Detection] Closing phrase detected - marking as resolved`);
+        return { isResolved: true, confidence: 0.9 };
+      }
+    }
+
+    // Use AI to analyze if conversation is resolved
+    const recentMessages = messages.slice(-5)
+      .map(m => `${m.message_type}: ${m.message}`)
+      .join('\n');
+
+    const prompt = `Analyze if this conversation is resolved:
+
+${recentMessages}
+
+Return JSON:
+{
+  "is_resolved": true or false,
+  "confidence": 0.0-1.0,
+  "reasoning": "brief explanation"
+}
+
+Consider resolved if:
+- Tenant's issue was addressed
+- AI provided solution or next steps
+- Tenant confirmed understanding
+- No follow-up questions pending`;
+
+    try {
+      const response = await openai.chat.completions.create({
+        model: "gpt-3.5-turbo",
+        messages: [{ role: "user", content: prompt }],
+        response_format: { type: "json_object" },
+        max_tokens: 200,
+      });
+
+      const result = JSON.parse(response.choices[0].message.content);
+      if (result.is_resolved) {
+        console.log(`[Resolution Detection] AI analysis - marking as resolved (confidence: ${result.confidence})`);
+      }
+      return result;
+    } catch (error) {
+      console.error("Resolution detection error:", error);
+      return { isResolved: false, confidence: 0.0 };
+    }
   }
 }
 

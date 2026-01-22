@@ -42,7 +42,7 @@ router.post("/", async (req, res) => {
     // Load conversation history (last 15 messages - increased for better context)
     const historyResult = await db.query(
       `SELECT message, response
-       FROM conversations
+       FROM messages
        WHERE tenant_id = $1
        ORDER BY timestamp DESC
        LIMIT 15`,
@@ -82,8 +82,8 @@ router.post("/", async (req, res) => {
 
     // Log conversation to database
     const conversationResult = await db.query(
-      `INSERT INTO conversations (tenant_id, channel, message, response, ai_actions, timestamp)
-       VALUES ($1, $2, $3, $4, $5, NOW())
+      `INSERT INTO messages (tenant_id, channel, message, response, ai_actions, timestamp, message_type)
+       VALUES ($1, $2, $3, $4, $5, NOW(), 'user_message')
        RETURNING *`,
       [
         tenant_id,
@@ -224,7 +224,7 @@ async function createMaintenanceRequest(action, tenantId, propertyId, conversati
   // Create maintenance request in database
   const result = await db.query(
     `INSERT INTO maintenance_requests
-       (property_id, tenant_id, conversation_id, issue_description, priority, status, created_at)
+       (property_id, tenant_id, message_id, issue_description, priority, status, created_at)
        VALUES ($1, $2, $3, $4, $5, 'open', NOW())
        RETURNING *`,
     [propertyId, tenantId, conversationId, description, priority]
@@ -339,7 +339,7 @@ router.get("/:tenantId/history", async (req, res) => {
     const { limit = 20 } = req.query;
 
     const result = await db.query(
-      `SELECT * FROM conversations
+      `SELECT * FROM messages
        WHERE tenant_id = $1
        ORDER BY timestamp DESC
        LIMIT $2`,

@@ -70,63 +70,133 @@ router.post("/twilio/sms", async (req, res) => {
 
     const property = propertyResult.rows[0] || null;
 
-    // Load conversation history (last 15 messages - increased for better context)
-    const historyResult = await db.query(
-      `SELECT message, response 
-       FROM conversations 
-       WHERE tenant_id = $1 
-       ORDER BY timestamp DESC 
-       LIMIT 15`,
+    // Find active thread for this tenant (SMS channel)
+    const activeThreadResult = await db.query(
+      `SELECT * FROM conversation_threads
+       WHERE tenant_id = $1
+       AND channel = 'sms'
+       AND status = 'active'
+       ORDER BY last_activity_at DESC
+       LIMIT 1`,
       [tenant.id]
     );
 
+    const activeThread = activeThreadResult.rows[0] || null;
+
+    // Load recent messages from active thread (for topic analysis)
+    let recentMessages = [];
+    if (activeThread) {
+      const messagesResult = await db.query(
+        `SELECT * FROM messages
+         WHERE thread_id = $1
+         ORDER BY timestamp ASC
+         LIMIT 10`,
+        [activeThread.id]
+      );
+      recentMessages = messagesResult.rows;
+    }
+
+    // Format conversation history for OpenAI
+    const conversationHistory = aiService.formatConversationHistory(recentMessages);
+
     // Load open maintenance requests for context
     const maintenanceResult = await db.query(
-      `SELECT issue_description, priority, status 
-       FROM maintenance_requests 
-       WHERE tenant_id = $1 
+      `SELECT issue_description, priority, status
+       FROM maintenance_requests
+       WHERE tenant_id = $1
        AND status IN ('open', 'in_progress')
-       ORDER BY created_at DESC 
+       ORDER BY created_at DESC
        LIMIT 5`,
       [tenant.id]
     );
 
-    // Format conversation history for OpenAI
-    const conversationHistory = aiService.formatConversationHistory(
-      historyResult.rows
-    );
-
-    // Generate AI response with open maintenance requests context
-    const aiResponse = await aiService.generateResponse(
+    // Generate AI response with thread analysis
+    const analysis = await aiService.generateResponseWithAnalysis(
       property,
       tenant,
       conversationHistory,
       Body,
-      maintenanceResult.rows
+      maintenanceResult.rows,
+      activeThread
     );
 
-    // Extract actions from AI response
-    const actions = aiService.extractActions(aiResponse);
+    const { response, topicAnalysis, resolutionAnalysis } = analysis;
 
-    // Deduplicate actions to prevent duplicate maintenance requests
+    // Determine if we should continue current thread or create new one
+    let threadId;
+    let isNewThread = false;
+
+    if (activeThread && topicAnalysis.shouldContinue) {
+      // Continue existing thread
+      threadId = activeThread.id;
+
+      // Update thread activity
+      await db.query(
+        `UPDATE conversation_threads
+         SET last_activity_at = NOW()
+         WHERE id = $1`,
+        [threadId]
+      );
+
+      // Check if conversation is resolved
+      if (resolutionAnalysis.isResolved && resolutionAnalysis.confidence >= 0.8) {
+        console.log(`[Thread Management] Marking thread ${threadId} as resolved`);
+        await db.query(
+          `UPDATE conversation_threads
+           SET status = 'resolved', resolved_at = NOW()
+           WHERE id = $1`,
+          [threadId]
+        );
+      }
+    } else {
+      // Create new thread
+      const subject = topicAnalysis.newSubject || await aiService.extractSubject(Body);
+
+      const threadResult = await db.query(
+        `INSERT INTO conversation_threads
+         (tenant_id, property_id, subject, channel, created_at, last_activity_at)
+         VALUES ($1, $2, $3, 'sms', NOW(), NOW())
+         RETURNING *`,
+        [tenant.id, property ? property.id : null, subject]
+      );
+
+      threadId = threadResult.rows[0].id;
+      isNewThread = true;
+      console.log(`[Thread Management] Created new thread ${threadId}: "${subject}"`);
+    }
+
+    // Extract actions from AI response
+    const actions = aiService.extractActions(response);
     const deduplicatedActions = aiService.deduplicateActions(actions);
 
-    // Log conversation to database
-    const conversationResult = await db.query(
-      `INSERT INTO conversations (tenant_id, channel, message, response, ai_actions, timestamp)
-       VALUES ($1, $2, $3, $4, $5, NOW())
+    // Log tenant message
+    const messageResult = await db.query(
+      `INSERT INTO messages
+       (thread_id, tenant_id, channel, message, message_type, timestamp)
+       VALUES ($1, $2, 'sms', $3, 'user_message', NOW())
+       RETURNING *`,
+      [threadId, tenant.id, Body]
+    );
+
+    const savedMessage = messageResult.rows[0];
+
+    // Log AI response
+    const responseResult = await db.query(
+      `INSERT INTO messages
+       (thread_id, tenant_id, channel, message, response, ai_actions, message_type, timestamp)
+       VALUES ($1, $2, 'sms', $3, $4, $5, 'ai_response', NOW())
        RETURNING *`,
       [
+        threadId,
         tenant.id,
-        "sms",
-        Body,
-        aiResponse,
+        Body, // Store original message for reference
+        response,
         actions.length > 0 ? JSON.stringify(actions) : null,
       ]
     );
 
-    const savedConversation = conversationResult.rows[0];
-    console.log(`Saved conversation: ${savedConversation.id}`);
+    const savedResponse = responseResult.rows[0];
+    console.log(`Saved messages: ${savedMessage.id} (user), ${savedResponse.id} (AI)`);
 
     // Execute actions (maintenance requests, alerts, etc.)
     const executedActions = [];
@@ -136,7 +206,7 @@ router.post("/twilio/sms", async (req, res) => {
           action,
           tenant.id,
           property ? property.id : null,
-          savedConversation.id
+          savedResponse.id // Use message_id instead of conversation_id
         );
         executedActions.push({ ...action, status: "executed", result });
       } catch (error) {
@@ -238,15 +308,34 @@ router.post("/email/inbound", async (req, res) => {
     );
     const property = propertyResult.rows[0] || null;
 
-    // Load conversation history (last 15 messages)
-    const historyResult = await db.query(
-      `SELECT message, response
-       FROM conversations
+    // Find active thread for this tenant (email channel)
+    const activeThreadResult = await db.query(
+      `SELECT * FROM conversation_threads
        WHERE tenant_id = $1
-       ORDER BY timestamp DESC
-       LIMIT 15`,
+       AND channel = 'email'
+       AND status = 'active'
+       ORDER BY last_activity_at DESC
+       LIMIT 1`,
       [tenant.id]
     );
+
+    const activeThread = activeThreadResult.rows[0] || null;
+
+    // Load recent messages from active thread (for topic analysis)
+    let recentMessages = [];
+    if (activeThread) {
+      const messagesResult = await db.query(
+        `SELECT * FROM messages
+         WHERE thread_id = $1
+         ORDER BY timestamp ASC
+         LIMIT 10`,
+        [activeThread.id]
+      );
+      recentMessages = messagesResult.rows;
+    }
+
+    // Format conversation history for OpenAI
+    const conversationHistory = aiService.formatConversationHistory(recentMessages);
 
     // Load open maintenance requests for context
     const maintenanceResult = await db.query(
@@ -259,43 +348,93 @@ router.post("/email/inbound", async (req, res) => {
       [tenant.id]
     );
 
-    // Format conversation history for OpenAI
-    const conversationHistory = aiService.formatConversationHistory(
-      historyResult.rows
-    );
-
-    // Generate AI response with context
-    const aiResponse = await aiService.generateResponse(
+    // Generate AI response with thread analysis
+    const analysis = await aiService.generateResponseWithAnalysis(
       property,
       tenant,
       conversationHistory,
       messageBody,
-      maintenanceResult.rows
+      maintenanceResult.rows,
+      activeThread
     );
 
-    // Extract actions from AI response
-    const actions = aiService.extractActions(aiResponse);
+    const { response, topicAnalysis, resolutionAnalysis } = analysis;
 
-    // Deduplicate actions to prevent duplicate maintenance requests
+    // Determine if we should continue current thread or create new one
+    let threadId;
+    let isNewThread = false;
+
+    if (activeThread && topicAnalysis.shouldContinue) {
+      // Continue existing thread
+      threadId = activeThread.id;
+
+      // Update thread activity
+      await db.query(
+        `UPDATE conversation_threads
+         SET last_activity_at = NOW()
+         WHERE id = $1`,
+        [threadId]
+      );
+
+      // Check if conversation is resolved
+      if (resolutionAnalysis.isResolved && resolutionAnalysis.confidence >= 0.8) {
+        console.log(`[Thread Management] Marking thread ${threadId} as resolved`);
+        await db.query(
+          `UPDATE conversation_threads
+           SET status = 'resolved', resolved_at = NOW()
+           WHERE id = $1`,
+          [threadId]
+        );
+      }
+    } else {
+      // Create new thread
+      const threadSubject = topicAnalysis.newSubject || await aiService.extractSubject(messageBody);
+
+      const threadResult = await db.query(
+        `INSERT INTO conversation_threads
+         (tenant_id, property_id, subject, channel, created_at, last_activity_at)
+         VALUES ($1, $2, $3, 'email', NOW(), NOW())
+         RETURNING *`,
+        [tenant.id, property ? property.id : null, threadSubject]
+      );
+
+      threadId = threadResult.rows[0].id;
+      isNewThread = true;
+      console.log(`[Thread Management] Created new thread ${threadId}: "${threadSubject}"`);
+    }
+
+    // Extract actions from AI response
+    const actions = aiService.extractActions(response);
     const deduplicatedActions = aiService.deduplicateActions(actions);
 
-    // Log conversation to database
-    const conversationResult = await db.query(
-      `INSERT INTO conversations (tenant_id, channel, message, response, ai_actions, timestamp, subject)
-       VALUES ($1, $2, $3, $4, $5, NOW(), $6)
+    // Log tenant message
+    const messageResult = await db.query(
+      `INSERT INTO messages
+       (thread_id, tenant_id, channel, message, message_type, timestamp)
+       VALUES ($1, $2, 'email', $3, 'user_message', NOW())
+       RETURNING *`,
+      [threadId, tenant.id, messageBody]
+    );
+
+    const savedMessage = messageResult.rows[0];
+
+    // Log AI response
+    const responseResult = await db.query(
+      `INSERT INTO messages
+       (thread_id, tenant_id, channel, message, response, ai_actions, message_type, timestamp)
+       VALUES ($1, $2, 'email', $3, $4, $5, 'ai_response', NOW())
        RETURNING *`,
       [
+        threadId,
         tenant.id,
-        "email",
-        messageBody,
-        aiResponse,
+        messageBody, // Store original message for reference
+        response,
         actions.length > 0 ? JSON.stringify(actions) : null,
-        subject || null,
       ]
     );
 
-    const savedConversation = conversationResult.rows[0];
-    console.log(`Saved conversation: ${savedConversation.id}`);
+    const savedResponse = responseResult.rows[0];
+    console.log(`Saved messages: ${savedMessage.id} (user), ${savedResponse.id} (AI)`);
 
     // Execute actions (maintenance requests, alerts, etc.)
     const executedActions = [];
@@ -305,7 +444,7 @@ router.post("/email/inbound", async (req, res) => {
           action,
             tenant.id,
             property ? property.id : null,
-            savedConversation.id
+            savedResponse.id // Use message_id instead of conversation_id
         );
         executedActions.push({ ...action, status: "executed", result });
       } catch (error) {
@@ -347,7 +486,7 @@ router.post("/email/inbound", async (req, res) => {
     // Return success response
     res.status(200).json({
       status: "processed",
-      conversation_id: savedConversation.id,
+      conversation_id: savedMessage.id,
       actions: executedActions,
       deduplicated_from: actions.length,
       attachments: savedAttachments.length
@@ -495,7 +634,7 @@ async function createMaintenanceRequest(action, tenantId, propertyId, conversati
 
   const result = await db.query(
     `INSERT INTO maintenance_requests
-       (property_id, tenant_id, conversation_id, issue_description, priority, status, created_at)
+       (property_id, tenant_id, message_id, issue_description, priority, status, created_at)
        VALUES ($1, $2, $3, $4, $5, 'open', NOW())
        RETURNING *`,
     [propertyId, tenantId, conversationId, description, priority]

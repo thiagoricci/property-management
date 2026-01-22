@@ -69,7 +69,7 @@ async function handleEmailAttachments(attachments, conversationId, db) {
 
       // Prepare attachment metadata
       const attachmentMetadata = {
-        conversation_id: conversationId,
+        message_id: conversationId,
         filename: attachment.filename,
         stored_filename: uniqueFilename,
         content_type: attachment.content_type,
@@ -80,7 +80,7 @@ async function handleEmailAttachments(attachments, conversationId, db) {
       // Store attachment metadata in database
       try {
         const result = await db.query(
-          `INSERT INTO attachments (conversation_id, filename, stored_filename, content_type, size, url)
+          `INSERT INTO attachments (message_id, filename, stored_filename, content_type, size, url)
            VALUES ($1, $2, $3, $4, $5, $6)
            RETURNING *`,
           [

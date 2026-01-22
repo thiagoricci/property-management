@@ -3,15 +3,71 @@ const db = require("../config/database");
 const authenticateToken = require("../middleware/auth");
 const router = express.Router();
 
+// Get tenant analytics
+router.get("/analytics", authenticateToken, async (req, res) => {
+  try {
+    // Get total tenants
+    const totalResult = await db.query("SELECT COUNT(*) as count FROM tenants");
+    const totalTenants = parseInt(totalResult.rows[0].count);
+
+    // Get active tenants (tenants with conversations in last 30 days)
+    const activeResult = await db.query(`
+      SELECT COUNT(DISTINCT t.id) as count
+      FROM tenants t
+      INNER JOIN messages m ON t.id = m.tenant_id
+      WHERE m.timestamp >= NOW() - INTERVAL '30 days'
+    `);
+    const activeTenants = parseInt(activeResult.rows[0].count);
+
+    // Get properties with tenants
+    const propertiesResult = await db.query(`
+      SELECT COUNT(DISTINCT property_id) as count
+      FROM tenants
+      WHERE property_id IS NOT NULL
+    `);
+    const propertiesWithTenants = parseInt(propertiesResult.rows[0].count);
+
+    // Get new tenants this month
+    const newResult = await db.query(`
+      SELECT COUNT(*) as count
+      FROM tenants
+      WHERE DATE_TRUNC('month', created_at) = DATE_TRUNC('month', CURRENT_DATE)
+    `);
+    const newThisMonth = parseInt(newResult.rows[0].count);
+
+    res.json({
+      total_tenants: totalTenants,
+      active_tenants: activeTenants,
+      properties_with_tenants: propertiesWithTenants,
+      new_this_month: newThisMonth,
+    });
+  } catch (error) {
+    console.error("Get tenant analytics error:", error);
+    res.status(500).json({ error: "Failed to fetch tenant analytics" });
+  }
+});
+
 // Get all tenants
 router.get("/", authenticateToken, async (req, res) => {
   try {
-    const result = await db.query(`
+    const { property_id } = req.query;
+    
+    let query = `
       SELECT t.*, p.address as property_address, p.id as property_id
       FROM tenants t
       LEFT JOIN properties p ON t.property_id = p.id
-      ORDER BY t.created_at DESC
-    `);
+    `;
+    
+    const params = [];
+    
+    if (property_id) {
+      query += " WHERE t.property_id = $1";
+      params.push(property_id);
+    }
+    
+    query += " ORDER BY t.created_at DESC";
+    
+    const result = await db.query(query, params);
     res.json(result.rows);
   } catch (error) {
     console.error("Get tenants error:", error);

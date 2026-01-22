@@ -17,6 +17,7 @@ import {
 } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
+import { DeleteConfirmation } from "@/components/modals/DeleteConfirmation";
 import Link from "next/link";
 
 interface PropertyDetail extends Property {
@@ -29,6 +30,11 @@ export default function PropertyDetailPage() {
   const [property, setProperty] = useState<PropertyDetail | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [showAddTenantModal, setShowAddTenantModal] = useState(false);
+  const [deleteDialog, setDeleteDialog] = useState<{
+    isOpen: boolean;
+    tenantId: number | null;
+  }>({ isOpen: false, tenantId: null });
+  const [isDeleting, setIsDeleting] = useState(false);
 
   useEffect(() => {
     fetchProperty();
@@ -45,18 +51,25 @@ export default function PropertyDetailPage() {
     }
   };
 
-  const handleDeleteTenant = async (tenantId: number) => {
-    if (!confirm("Are you sure you want to remove this tenant?")) return;
+  const handleDeleteTenantClick = (tenantId: number) => {
+    setDeleteDialog({ isOpen: true, tenantId });
+  };
 
+  const handleDeleteTenantConfirm = async () => {
+    if (!deleteDialog.tenantId) return;
+
+    setIsDeleting(true);
     try {
-      await apiClient.delete(`/tenants/${tenantId}`);
+      await apiClient.delete(`/tenants/${deleteDialog.tenantId}`);
       setProperty({
         ...property!,
-        tenants: property!.tenants.filter((t) => t.id !== tenantId),
+        tenants: property!.tenants.filter((t) => t.id !== deleteDialog.tenantId),
       });
+      setDeleteDialog({ isOpen: false, tenantId: null });
     } catch (error) {
       console.error("Failed to delete tenant:", error);
-      alert("Failed to delete tenant");
+    } finally {
+      setIsDeleting(false);
     }
   };
 
@@ -215,7 +228,7 @@ export default function PropertyDetailPage() {
                     variant="ghost"
                     size="icon"
                     className="text-destructive hover:text-destructive"
-                    onClick={() => handleDeleteTenant(tenant.id)}
+                    onClick={() => handleDeleteTenantClick(tenant.id)}
                   >
                     <Trash2 className="h-4 w-4" />
                   </Button>
@@ -236,6 +249,16 @@ export default function PropertyDetailPage() {
           }}
         />
       )}
+
+      <DeleteConfirmation
+        isOpen={deleteDialog.isOpen}
+        onClose={() => setDeleteDialog({ isOpen: false, tenantId: null })}
+        onConfirm={handleDeleteTenantConfirm}
+        title="Remove Tenant"
+        description="Are you sure you want to remove this tenant from the property?"
+        confirmText="Remove"
+        isLoading={isDeleting}
+      />
     </div>
   );
 }

@@ -59,11 +59,11 @@ router.get("/:id", authenticateToken, async (req, res) => {
         mr.*,
         t.name as tenant_name,
         p.address as property_address,
-        c.message as conversation_message
+        m.message as conversation_message
       FROM maintenance_requests mr
       LEFT JOIN tenants t ON mr.tenant_id = t.id
       LEFT JOIN properties p ON mr.property_id = p.id
-      LEFT JOIN conversations c ON mr.conversation_id = c.id
+      LEFT JOIN messages m ON mr.message_id = m.id
       WHERE mr.id = $1`,
       [id]
     );
@@ -82,7 +82,7 @@ router.get("/:id", authenticateToken, async (req, res) => {
 // Create new maintenance request
 router.post("/", authenticateToken, async (req, res) => {
   try {
-    const { property_id, tenant_id, conversation_id, issue_description, priority } =
+    const { property_id, tenant_id, message_id, issue_description, priority } =
       req.body;
 
     if (!property_id || !tenant_id || !issue_description || !priority) {
@@ -92,10 +92,10 @@ router.post("/", authenticateToken, async (req, res) => {
     }
 
     const result = await db.query(
-      `INSERT INTO maintenance_requests (property_id, tenant_id, conversation_id, issue_description, priority)
+      `INSERT INTO maintenance_requests (property_id, tenant_id, message_id, issue_description, priority)
        VALUES ($1, $2, $3, $4, $5)
        RETURNING *`,
-      [property_id, tenant_id, conversation_id || null, issue_description, priority]
+      [property_id, tenant_id, message_id || null, issue_description, priority]
     );
 
     res.status(201).json(result.rows[0]);

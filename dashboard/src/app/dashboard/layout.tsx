@@ -9,6 +9,7 @@ import {
   Building2,
   Wrench,
   MessageSquare,
+  Users,
   LogOut,
   Menu,
 } from "lucide-react";
@@ -43,8 +44,9 @@ export default function DashboardLayout({
 
   const navigation = [
     { name: "Dashboard", href: "/dashboard", icon: Home },
+    { name: "Tenants", href: "/dashboard/tenants", icon: Users },
     { name: "Properties", href: "/dashboard/properties", icon: Building2 },
-    { name: "Maintenance", href: "/dashboard/maintenance", icon: Wrench },
+    { name: "Requests", href: "/dashboard/maintenance", icon: Wrench },
     { name: "Conversations", href: "/dashboard/conversations", icon: MessageSquare },
   ];
 

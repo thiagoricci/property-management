@@ -3,6 +3,7 @@ import { Poppins } from "next/font/google";
 import { Libre_Baskerville, IBM_Plex_Mono } from "next/font/google";
 import "./globals.css";
 import { AuthProvider } from "@/contexts/AuthContext";
+import { Toaster } from "@/components/ui/sonner";
 
 const poppins = Poppins({
   subsets: ["latin"],
@@ -39,6 +40,7 @@ export default function RootLayout({
     <html lang="en" className={`${poppins.variable} ${libreBaskerville.variable} ${ibmPlexMono.variable}`}>
       <body className="font-sans">
         <AuthProvider>{children}</AuthProvider>
+        <Toaster />
       </body>
     </html>
   );
