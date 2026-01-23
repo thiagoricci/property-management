@@ -12,6 +12,7 @@ import {
   Users,
   LogOut,
   Menu,
+  Settings as SettingsIcon,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 
@@ -48,6 +49,7 @@ export default function DashboardLayout({
     { name: "Properties", href: "/dashboard/properties", icon: Building2 },
     { name: "Requests", href: "/dashboard/maintenance", icon: Wrench },
     { name: "Conversations", href: "/dashboard/conversations", icon: MessageSquare },
+    { name: "Settings", href: "/dashboard/settings", icon: SettingsIcon },
   ];
 
   return (

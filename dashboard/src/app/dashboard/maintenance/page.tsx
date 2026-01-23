@@ -14,6 +14,7 @@ import {
   XCircle,
   ChevronDown,
   Wrench,
+  Link2,
 } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -298,6 +299,18 @@ export default function MaintenanceRequestsPage() {
                         >
                           {request.priority}
                         </Badge>
+
+                        {/* Duplicate Badge */}
+                        {request.is_duplicate && (
+                          <Badge
+                            variant="secondary"
+                            className="ml-2"
+                            title={`Linked to request #${request.related_request_id}`}
+                          >
+                            <Link2 className="h-3 w-3 mr-1" />
+                            Duplicate
+                          </Badge>
+                        )}
 
                         <div className="flex-1 min-w-0">
                           <div className="flex items-start justify-between gap-4 mb-3">

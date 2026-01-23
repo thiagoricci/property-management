@@ -99,6 +99,19 @@ export interface MaintenanceRequest {
   notes?: string;
   created_at: string;
   resolved_at?: string;
+  // Cross-thread deduplication fields
+  related_request_id?: number | null;
+  is_duplicate?: boolean;
+  duplicate_reason?: string | null;
+  // Related request context
+  thread_subject?: string;
+  thread_channel?: 'sms' | 'email' | 'whatsapp';
+  updated_at?: string;
+}
+
+export interface RelatedMaintenanceRequest extends MaintenanceRequest {
+  // Additional fields for related requests
+  related_requests?: MaintenanceRequest[];
 }
 
 export interface DashboardStats {
@@ -139,6 +152,59 @@ export interface User {
   id: number;
   email: string;
   name?: string;
+  phone?: string;
+  created_at: string;
+}
+
+export interface UserProfile {
+  id: number;
+  email: string;
+  name: string;
+  phone?: string;
+  created_at: string;
+}
+
+export interface UserSettings {
+  id: number;
+  user_id: number;
+  twilio_account_sid: string | null;
+  twilio_phone_number: string | null;
+  notification_preferences: Record<string, any>;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface TwilioConfig {
+  twilio_account_sid: string | null;
+  twilio_phone_number: string | null;
+  configured: boolean;
+}
+
+export interface TwilioConfigRequest {
+  account_sid: string;
+  auth_token: string;
+  phone_number: string;
+}
+
+export interface ProfileUpdateRequest {
+  name: string;
+  email: string;
+  phone?: string;
+}
+
+export interface PasswordChangeRequest {
+  current_password: string;
+  new_password: string;
+  confirm_password: string;
+}
+
+export interface TwilioTestResponse {
+  success: boolean;
+  message: string;
+  test_message_sid?: string;
+  test_message_status?: string;
+  error?: string;
+  code?: number;
 }
 
 export interface LoginResponse {

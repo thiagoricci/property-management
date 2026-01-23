@@ -17,6 +17,14 @@ class NotificationService {
     let result;
 
     try {
+      // Check if we have the required contact information for the chosen channel
+      if (channel === "sms" && !recipientPhone) {
+        throw new Error("Recipient phone number is missing for SMS notification");
+      }
+      if (channel === "email" && !recipientEmail) {
+        throw new Error("Recipient email address is missing for email notification");
+      }
+
       if (channel === "sms") {
         result = await twilio.sendSMS(recipientPhone, message);
       } else if (channel === "email") {
@@ -96,17 +104,19 @@ class NotificationService {
    * @param {Object} maintenanceRequest - Maintenance request details
    * @param {Object} tenant - Tenant details
    * @param {Object} property - Property details
+   * @param {String} managerPhone - Admin user's phone number
+   * @param {String} managerEmail - Admin user's email address
    * @returns {Promise<Object>} Notification result
    */
-  async notifyManagerOfMaintenanceRequest(maintenanceRequest, tenant, property) {
+  async notifyManagerOfMaintenanceRequest(maintenanceRequest, tenant, property, managerPhone, managerEmail) {
     const priority = maintenanceRequest.priority;
     const message = this.buildMaintenanceMessage(maintenanceRequest, tenant, property);
     const subject = `Maintenance Request: ${priority.toUpperCase()} - ${property.address}`;
 
     return await this.sendNotification(
       priority,
-      property.owner_phone,
-      property.owner_email,
+      managerPhone,
+      managerEmail,
       message,
       subject
     );
@@ -147,17 +157,19 @@ Please review and take action in the dashboard.`;
    * @param {String} reason - Emergency reason
    * @param {Object} tenant - Tenant details
    * @param {Object} property - Property details
+   * @param {String} managerPhone - Admin user's phone number
+   * @param {String} managerEmail - Admin user's email address
    * @returns {Promise<Object>} Notification result
    */
-  async notifyManagerOfEmergency(reason, tenant, property) {
+  async notifyManagerOfEmergency(reason, tenant, property, managerPhone, managerEmail) {
     const message = this.buildEmergencyMessage(reason, tenant, property);
     const subject = `🚨 EMERGENCY ALERT - ${property.address}`;
 
     // Always use SMS for emergencies
     return await this.sendNotification(
       "emergency",
-      property.owner_phone,
-      property.owner_email,
+      managerPhone,
+      managerEmail,
       message,
       subject
     );
@@ -222,6 +234,51 @@ IMMEDIATE ACTION REQUIRED!`;
         error: error.message,
       };
     }
+  }
+
+  /**
+   * Send escalation notification to manager
+   * @param {Object} thread - Thread details
+   * @param {Object} tenant - Tenant details
+   * @param {Object} property - Property details
+   * @param {String} reasoning - AI reasoning for escalation
+   * @param {String} managerPhone - Admin user's phone number
+   * @param {String} managerEmail - Admin user's email address
+   * @returns {Promise<Object>} Notification result
+   */
+  async notifyManagerOfEscalation(thread, tenant, property, reasoning, managerPhone, managerEmail) {
+    const message = this.buildEscalationMessage(thread, tenant, property, reasoning);
+    const subject = `⚠️ Conversation Escalation - ${property.address}`;
+
+    // Always use SMS for escalation alerts
+    return await this.sendNotification(
+      "urgent",
+      managerPhone,
+      managerEmail,
+      message,
+      subject
+    );
+  }
+
+  /**
+   * Build escalation notification message
+   * @param {Object} thread - Thread details
+   * @param {Object} tenant - Tenant details
+   * @param {Object} property - Property details
+   * @param {String} reasoning - AI reasoning for escalation
+   * @returns {String} Formatted message
+   */
+  buildEscalationMessage(thread, tenant, property, reasoning) {
+    return `⚠️ Conversation Escalation Alert
+
+Property: ${property.address}
+Tenant: ${tenant.name}
+Thread: "${thread.subject}"
+Reasoning: ${reasoning}
+
+Time: ${new Date().toLocaleString()}
+
+This conversation may require human intervention. Please review in the dashboard.`;
   }
 }
 

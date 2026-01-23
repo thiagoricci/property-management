@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react";
 import apiClient from "@/lib/api";
-import { Tenant, TenantAnalytics } from "@/types";
+import { Tenant } from "@/types";
 import {
   Users,
   Phone,
@@ -11,9 +11,8 @@ import {
   Calendar,
   Trash2,
   Search,
-  Building2,
-  Activity,
   Plus,
+  Building2,
 } from "lucide-react";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -33,10 +32,8 @@ import Link from "next/link";
 
 export default function TenantsPage() {
   const [tenants, setTenants] = useState<Tenant[]>([]);
-  const [analytics, setAnalytics] = useState<TenantAnalytics | null>(null);
   const [filteredTenants, setFilteredTenants] = useState<Tenant[]>([]);
   const [isLoading, setIsLoading] = useState(true);
-  const [isLoadingAnalytics, setIsLoadingAnalytics] = useState(true);
   const [searchQuery, setSearchQuery] = useState("");
   const [deleteDialog, setDeleteDialog] = useState<{
     isOpen: boolean;
@@ -47,7 +44,6 @@ export default function TenantsPage() {
 
   useEffect(() => {
     fetchTenants();
-    fetchAnalytics();
   }, []);
 
   useEffect(() => {
@@ -62,17 +58,6 @@ export default function TenantsPage() {
       console.error("Failed to fetch tenants:", error);
     } finally {
       setIsLoading(false);
-    }
-  };
-
-  const fetchAnalytics = async () => {
-    try {
-      const response = await apiClient.get<TenantAnalytics>("/tenants/analytics");
-      setAnalytics(response.data);
-    } catch (error) {
-      console.error("Failed to fetch tenant analytics:", error);
-    } finally {
-      setIsLoadingAnalytics(false);
     }
   };
 
@@ -144,23 +129,6 @@ export default function TenantsPage() {
           <Skeleton className="h-10 w-32" />
         </div>
 
-        {/* Analytics Cards Skeleton */}
-        <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
-          {[1, 2, 3, 4].map((i) => (
-            <Card key={i}>
-              <CardContent className="p-6">
-                <div className="flex items-center justify-between">
-                  <div>
-                    <Skeleton className="h-4 w-24 mb-2" />
-                    <Skeleton className="h-8 w-16" />
-                  </div>
-                  <Skeleton className="h-12 w-12 rounded-full" />
-                </div>
-              </CardContent>
-            </Card>
-          ))}
-        </div>
-
         {/* Table Skeleton */}
         <Card>
           <CardContent className="p-0">
@@ -210,101 +178,6 @@ export default function TenantsPage() {
             Add Tenant
           </Button>
         </Link>
-      </div>
-
-      {/* Analytics Cards */}
-      <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
-        {/* Total Tenants */}
-        <Card>
-          <CardContent className="p-6">
-            <div className="flex items-center justify-between">
-              <div>
-                <p className="text-sm font-medium text-muted-foreground">
-                  Total Tenants
-                </p>
-                <div className="text-3xl font-bold mt-2">
-                  {isLoadingAnalytics ? (
-                    <Skeleton className="h-8 w-16" />
-                  ) : (
-                    analytics?.total_tenants || 0
-                  )}
-                </div>
-              </div>
-              <div className="h-12 w-12 rounded-full bg-blue-100 dark:bg-blue-900/30 flex items-center justify-center">
-                <Users className="h-6 w-6 text-blue-600 dark:text-blue-400" />
-              </div>
-            </div>
-          </CardContent>
-        </Card>
-
-        {/* Active Tenants */}
-        <Card>
-          <CardContent className="p-6">
-            <div className="flex items-center justify-between">
-              <div>
-                <p className="text-sm font-medium text-muted-foreground">
-                  Active Tenants
-                </p>
-                <div className="text-3xl font-bold mt-2">
-                  {isLoadingAnalytics ? (
-                    <Skeleton className="h-8 w-16" />
-                  ) : (
-                    analytics?.active_tenants || 0
-                  )}
-                </div>
-              </div>
-              <div className="h-12 w-12 rounded-full bg-green-100 dark:bg-green-900/30 flex items-center justify-center">
-                <Activity className="h-6 w-6 text-green-600 dark:text-green-400" />
-              </div>
-            </div>
-          </CardContent>
-        </Card>
-
-        {/* Properties with Tenants */}
-        <Card>
-          <CardContent className="p-6">
-            <div className="flex items-center justify-between">
-              <div>
-                <p className="text-sm font-medium text-muted-foreground">
-                  Properties with Tenants
-                </p>
-                <div className="text-3xl font-bold mt-2">
-                  {isLoadingAnalytics ? (
-                    <Skeleton className="h-8 w-16" />
-                  ) : (
-                    analytics?.properties_with_tenants || 0
-                  )}
-                </div>
-              </div>
-              <div className="h-12 w-12 rounded-full bg-purple-100 dark:bg-purple-900/30 flex items-center justify-center">
-                <Building2 className="h-6 w-6 text-purple-600 dark:text-purple-400" />
-              </div>
-            </div>
-          </CardContent>
-        </Card>
-
-        {/* New This Month */}
-        <Card>
-          <CardContent className="p-6">
-            <div className="flex items-center justify-between">
-              <div>
-                <p className="text-sm font-medium text-muted-foreground">
-                  New This Month
-                </p>
-                <div className="text-3xl font-bold mt-2">
-                  {isLoadingAnalytics ? (
-                    <Skeleton className="h-8 w-16" />
-                  ) : (
-                    analytics?.new_this_month || 0
-                  )}
-                </div>
-              </div>
-              <div className="h-12 w-12 rounded-full bg-orange-100 dark:bg-orange-900/30 flex items-center justify-center">
-                <Calendar className="h-6 w-6 text-orange-600 dark:text-orange-400" />
-              </div>
-            </div>
-          </CardContent>
-        </Card>
       </div>
 
       {/* Search Bar */}

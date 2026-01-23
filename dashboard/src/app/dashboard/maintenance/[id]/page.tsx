@@ -20,6 +20,8 @@ import {
   FileText,
   Share2,
   Printer,
+  ChevronDown,
+  Link2,
 } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -59,15 +61,19 @@ export default function MaintenanceDetailPage() {
   const [isLoading, setIsLoading] = useState(true);
   const [isSavingNotes, setIsSavingNotes] = useState(false);
   const [isUpdatingStatus, setIsUpdatingStatus] = useState(false);
+  const [isUpdatingPriority, setIsUpdatingPriority] = useState(false);
   const [deleteDialog, setDeleteDialog] = useState<{
     isOpen: boolean;
     requestId: number | null;
   }>({ isOpen: false, requestId: null });
   const [isDeleting, setIsDeleting] = useState(false);
   const [activeTab, setActiveTab] = useState("overview");
+  const [relatedRequests, setRelatedRequests] = useState<MaintenanceRequest[]>([]);
+  const [isLoadingRelated, setIsLoadingRelated] = useState(false);
 
   useEffect(() => {
     fetchRequest();
+    fetchRelatedRequests();
   }, [params.id]);
 
   const fetchRequest = async () => {
@@ -81,6 +87,21 @@ export default function MaintenanceDetailPage() {
       toast.error("Failed to load maintenance request");
     } finally {
       setIsLoading(false);
+    }
+  };
+
+  const fetchRelatedRequests = async () => {
+    try {
+      setIsLoadingRelated(true);
+      const response = await apiClient.get<MaintenanceRequest[]>(
+        `/maintenance-requests/${params.id}/related`
+      );
+      setRelatedRequests(response.data);
+    } catch (error) {
+      console.error("Failed to fetch related requests:", error);
+      // Don't show error toast for related requests - it's optional
+    } finally {
+      setIsLoadingRelated(false);
     }
   };
 
@@ -117,6 +138,25 @@ export default function MaintenanceDetailPage() {
       toast.error("Failed to save notes");
     } finally {
       setIsSavingNotes(false);
+    }
+  };
+
+  const updatePriority = async (newPriority: string) => {
+    if (!request || newPriority === request.priority) return;
+
+    setIsUpdatingPriority(true);
+
+    try {
+      await apiClient.patch(`/maintenance-requests/${request.id}/priority`, {
+        priority: newPriority,
+      });
+      setRequest({ ...request, priority: newPriority as any });
+      toast.success(`Priority updated to ${newPriority}`);
+    } catch (error) {
+      console.error("Failed to update priority:", error);
+      toast.error("Failed to update priority");
+    } finally {
+      setIsUpdatingPriority(false);
     }
   };
 
@@ -243,11 +283,12 @@ export default function MaintenanceDetailPage() {
 
       {/* Main Content with Tabs */}
       <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
-        <TabsList className="grid w-full max-w-md grid-cols-4">
+        <TabsList className="grid w-full max-w-lg grid-cols-5">
           <TabsTrigger value="overview">Overview</TabsTrigger>
           <TabsTrigger value="notes">Notes</TabsTrigger>
           <TabsTrigger value="conversation">Conversation</TabsTrigger>
           <TabsTrigger value="timeline">Timeline</TabsTrigger>
+          <TabsTrigger value="related">Related</TabsTrigger>
         </TabsList>
 
         {/* Overview Tab */}
@@ -257,13 +298,6 @@ export default function MaintenanceDetailPage() {
             <CardHeader>
               <div className="flex items-start justify-between">
                 <div className="flex items-center gap-3">
-                  <div
-                    className={`px-3 py-1 rounded-full text-xs font-semibold uppercase ${getPriorityColor(
-                      request.priority
-                    )}`}
-                  >
-                    {request.priority}
-                  </div>
                   <div
                     className={`px-3 py-1 rounded-full text-xs font-semibold uppercase ${getStatusColor(
                       request.status
@@ -284,6 +318,111 @@ export default function MaintenanceDetailPage() {
                   Issue Description
                 </Label>
                 <p className="text-lg">{request.issue_description}</p>
+              </div>
+
+              {/* Priority Control */}
+              <div>
+                <Label className="text-sm font-medium text-muted-foreground mb-2 block">
+                  Priority
+                </Label>
+                <Popover>
+                  <PopoverTrigger asChild>
+                    <Button
+                      variant="outline"
+                      className="w-full justify-start"
+                      disabled={isUpdatingPriority}
+                    >
+                      <div
+                        className={`px-3 py-1 rounded-full text-xs font-semibold uppercase mr-2 ${getPriorityColor(
+                          request.priority
+                        )}`}
+                      >
+                        {request.priority}
+                      </div>
+                      <ChevronDown className="h-4 w-4 ml-auto" />
+                    </Button>
+                  </PopoverTrigger>
+                  <PopoverContent align="start" className="w-48">
+                    <div className="space-y-1">
+                      <p className="text-xs font-medium text-muted-foreground px-2 py-1.5">
+                        Change Priority
+                      </p>
+                      <Button
+                        variant="ghost"
+                        className="w-full justify-start"
+                        onClick={() => updatePriority("emergency")}
+                        disabled={isUpdatingPriority || request.priority === "emergency"}
+                      >
+                        <div
+                          className={`px-2 py-1 rounded-full text-xs font-semibold uppercase mr-2 ${getPriorityColor(
+                            "emergency"
+                          )}`}
+                        >
+                          emergency
+                        </div>
+                        {request.priority === "emergency" && (
+                          <CheckCircle2 className="h-4 w-4 ml-auto" />
+                        )}
+                      </Button>
+                      <Button
+                        variant="ghost"
+                        className="w-full justify-start"
+                        onClick={() => updatePriority("urgent")}
+                        disabled={isUpdatingPriority || request.priority === "urgent"}
+                      >
+                        <div
+                          className={`px-2 py-1 rounded-full text-xs font-semibold uppercase mr-2 ${getPriorityColor(
+                            "urgent"
+                          )}`}
+                        >
+                          urgent
+                        </div>
+                        {request.priority === "urgent" && (
+                          <CheckCircle2 className="h-4 w-4 ml-auto" />
+                        )}
+                      </Button>
+                      <Button
+                        variant="ghost"
+                        className="w-full justify-start"
+                        onClick={() => updatePriority("normal")}
+                        disabled={isUpdatingPriority || request.priority === "normal"}
+                      >
+                        <div
+                          className={`px-2 py-1 rounded-full text-xs font-semibold uppercase mr-2 ${getPriorityColor(
+                            "normal"
+                          )}`}
+                        >
+                          normal
+                        </div>
+                        {request.priority === "normal" && (
+                          <CheckCircle2 className="h-4 w-4 ml-auto" />
+                        )}
+                      </Button>
+                      <Button
+                        variant="ghost"
+                        className="w-full justify-start"
+                        onClick={() => updatePriority("low")}
+                        disabled={isUpdatingPriority || request.priority === "low"}
+                      >
+                        <div
+                          className={`px-2 py-1 rounded-full text-xs font-semibold uppercase mr-2 ${getPriorityColor(
+                            "low"
+                          )}`}
+                        >
+                          low
+                        </div>
+                        {request.priority === "low" && (
+                          <CheckCircle2 className="h-4 w-4 ml-auto" />
+                        )}
+                      </Button>
+                    </div>
+                  </PopoverContent>
+                </Popover>
+                {isUpdatingPriority && (
+                  <p className="text-xs text-muted-foreground mt-2">
+                    Updating priority...
+                  </p>
+                )}
               </div>
 
               {/* Metadata Accordion */}
@@ -524,6 +663,100 @@ export default function MaintenanceDetailPage() {
                   </div>
                 )}
               </div>
+            </CardContent>
+          </Card>
+        </TabsContent>
+
+        {/* Related Requests Tab */}
+        <TabsContent value="related" className="mt-6">
+          <Card>
+            <CardHeader>
+              <CardTitle className="flex items-center gap-2">
+                <Link2 className="h-5 w-5" />
+                Related Requests
+              </CardTitle>
+            </CardHeader>
+            <CardContent>
+              {isLoadingRelated ? (
+                <div className="text-center py-12 text-muted-foreground">
+                  <p>Loading related requests...</p>
+                </div>
+              ) : relatedRequests.length === 0 ? (
+                <div className="text-center py-12 text-muted-foreground">
+                  <Link2 className="h-12 w-12 mx-auto mb-4 opacity-50" />
+                  <p>No related requests found</p>
+                  <p className="text-sm mt-2">
+                    This request is not linked to any other maintenance requests.
+                  </p>
+                </div>
+              ) : (
+                <div className="space-y-4">
+                  {relatedRequests.map((relatedReq) => (
+                    <div
+                      key={relatedReq.id}
+                      className={`border-l-4 pl-4 py-3 ${
+                        relatedReq.is_duplicate
+                          ? "border-purple-500 bg-purple-50 dark:bg-purple-950/20"
+                          : "border-blue-500 bg-blue-50 dark:bg-blue-950/20"
+                      }`}
+                    >
+                      <div className="flex justify-between items-start">
+                        <div className="flex-1">
+                          <div className="flex items-center gap-2 mb-2">
+                            <Badge
+                              variant={relatedReq.is_duplicate ? "secondary" : "default"}
+                              className="text-xs"
+                            >
+                              {relatedReq.is_duplicate ? "Duplicate" : "Original"}
+                            </Badge>
+                            <Badge
+                              variant="outline"
+                              className={`text-xs ${getPriorityColor(relatedReq.priority)}`}
+                            >
+                              {relatedReq.priority}
+                            </Badge>
+                            <Badge
+                              variant="outline"
+                              className={`text-xs ${getStatusColor(relatedReq.status)}`}
+                            >
+                              {relatedReq.status.replace("_", " ")}
+                            </Badge>
+                          </div>
+                          <p className="font-medium">{relatedReq.issue_description}</p>
+                          <div className="flex items-center gap-4 mt-2 text-sm text-muted-foreground">
+                            <span className="flex items-center gap-1">
+                              <Clock className="h-3 w-3" />
+                              {new Date(relatedReq.created_at).toLocaleDateString()}
+                            </span>
+                            {relatedReq.thread_channel && (
+                              <span className="flex items-center gap-1">
+                                <MessageSquare className="h-3 w-3" />
+                                {relatedReq.thread_channel}
+                              </span>
+                            )}
+                            {relatedReq.thread_subject && (
+                              <span className="flex items-center gap-1">
+                                <FileText className="h-3 w-3" />
+                                {relatedReq.thread_subject}
+                              </span>
+                            )}
+                          </div>
+                        </div>
+                        <Link href={`/dashboard/maintenance/${relatedReq.id}`}>
+                          <Button variant="ghost" size="sm">
+                            View
+                          </Button>
+                        </Link>
+                      </div>
+                      {relatedReq.duplicate_reason && (
+                        <p className="text-sm text-muted-foreground mt-2">
+                          <span className="font-medium">Reason:</span> {relatedReq.duplicate_reason}
+                        </p>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              )}
             </CardContent>
           </Card>
         </TabsContent>

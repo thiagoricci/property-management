@@ -2,6 +2,8 @@ require("dotenv").config();
 const express = require("express");
 const cors = require("cors");
 const { verifyResendWebhook } = require("./src/middleware/webhookAuth");
+const cron = require("node-cron");
+const conversationService = require("./src/services/conversationService");
 
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -29,6 +31,9 @@ app.use("/api/tenants", require("./src/routes/tenants"));
 app.use("/api/maintenance-requests", require("./src/routes/maintenance"));
 app.use("/api/conversations", require("./src/routes/conversations"));
 app.use("/api/messages", require("./src/routes/messages"));
+app.use("/api/threads", require("./src/routes/threads"));
+app.use("/api/user", require("./src/middleware/auth"), require("./src/routes/user"));
+app.use("/api/settings", require("./src/middleware/auth"), require("./src/routes/settings"));
 
 // Webhook Routes (no authentication required)
 // Apply webhook signature verification to email inbound endpoint
@@ -64,4 +69,16 @@ app.use((err, req, res, next) => {
 app.listen(PORT, () => {
   console.log(`Server running on port ${PORT}`);
   console.log(`Environment: ${process.env.NODE_ENV || "development"}`);
+
+  // Schedule auto-closure task to run every hour
+  cron.schedule('0 * * * *', async () => {
+    console.log('[Scheduled Task] Running inactive thread closure check');
+    try {
+      await conversationService.closeInactiveThreads();
+    } catch (error) {
+      console.error('[Scheduled Task] Auto-closure failed:', error);
+    }
+  });
+
+  console.log('[Scheduled Task] Auto-closure check scheduled to run every hour');
 });
