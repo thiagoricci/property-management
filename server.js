@@ -81,4 +81,33 @@ app.listen(PORT, () => {
   });
 
   console.log('[Scheduled Task] Auto-closure check scheduled to run every hour');
+
+  // Schedule clarification state cleanup task to run every hour
+  cron.schedule('0 * * * *', async () => {
+    console.log('[Scheduled Task] Running clarification state cleanup');
+    try {
+      await cleanupExpiredClarifications();
+    } catch (error) {
+      console.error('[Scheduled Task] Clarification cleanup failed:', error);
+    }
+  });
+
+  console.log('[Scheduled Task] Clarification cleanup scheduled to run every hour');
 });
+
+/**
+ * Cleanup expired clarification states
+ * Marks pending clarifications as expired after 24 hours
+ */
+async function cleanupExpiredClarifications() {
+  const db = require('./src/config/database');
+
+  const result = await db.query(
+    `UPDATE clarification_states
+     SET state = 'expired'
+     WHERE state = 'pending'
+     AND expires_at < NOW()`
+  );
+
+  console.log(`[Cleanup] Expired ${result.rowCount} clarification state(s)`);
+}

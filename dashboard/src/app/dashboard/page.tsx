@@ -191,9 +191,6 @@ export default function DashboardPage() {
             <AlertCircle className="h-4 w-4" />
             <AlertTitle className="flex items-center gap-2">
               Attention Required
-              <Badge variant="secondary" className="ml-2">
-                {emergencyRequests.length + urgentRequests.length} urgent
-              </Badge>
             </AlertTitle>
             <AlertDescription>
               You have{" "}

@@ -127,7 +127,8 @@ router.post("/", authenticateToken, async (req, res) => {
         tenant,
         property,
         adminUser ? adminUser.phone : property.owner_phone,
-        adminUser ? adminUser.email : property.owner_email
+        adminUser ? adminUser.email : property.owner_email,
+        adminUser ? adminUser.id : null
       );
 
       console.log(`Manager notification sent: ${notificationResult.success ? "SUCCESS" : "FAILED"}`);

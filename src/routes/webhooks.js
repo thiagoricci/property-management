@@ -8,6 +8,38 @@ const emailParser = require("../utils/emailParser");
 const attachmentHandler = require("../utils/attachmentHandler");
 const OpenAI = require("openai");
 
+/**
+ * Fetch user settings from database
+ * @param {Number} userId - User ID
+ * @returns {Promise<Object|null>} User settings or null
+ */
+async function getUserSettings(userId) {
+  try {
+    const result = await db.query(
+      "SELECT * FROM user_settings WHERE user_id = $1",
+      [userId]
+    );
+    return result.rows.length > 0 ? result.rows[0] : null;
+  } catch (error) {
+    console.error("Failed to fetch user settings:", error);
+    return null;
+  }
+}
+
+/**
+ * Get admin user ID
+ * @returns {Promise<Number|null>} Admin user ID or null
+ */
+async function getAdminUserId() {
+  try {
+    const result = await db.query("SELECT id FROM users ORDER BY id LIMIT 1");
+    return result.rows.length > 0 ? result.rows[0].id : null;
+  } catch (error) {
+    console.error("Failed to fetch admin user ID:", error);
+    return null;
+  }
+}
+
 const openai = new OpenAI({
   apiKey: process.env.OPENAI_API_KEY,
 });
@@ -50,18 +82,34 @@ router.post("/twilio/sms", async (req, res) => {
       console.log(`No tenant found for phone: ${From}`);
       const unrecognizedMessage = "Hello! I'm Alice, your AI property manager. I don't recognize your number. If you're a tenant, please contact your property manager to update your phone number.";
       
+      // Get admin user ID and fetch user settings
+      const adminUserId = await getAdminUserId();
+      
       // Send response asynchronously (don't wait for it)
-      twilio.sendSMS(From, unrecognizedMessage).catch(err => {
-        console.error("Failed to send unrecognized message:", err);
-      });
+      if (adminUserId) {
+        const userSettings = await getUserSettings(adminUserId);
+        if (userSettings && userSettings.twilio_account_sid && userSettings.twilio_auth_token_encrypted) {
+          twilio.sendSMSWithUserSettings(From, unrecognizedMessage, userSettings).catch(err => {
+            console.error("Failed to send unrecognized message:", err);
+          });
+        } else {
+          // Fallback to legacy .env configuration
+          console.warn("Twilio not configured in user settings, using legacy .env configuration");
+          twilio.sendSMSLegacy(From, unrecognizedMessage).catch(err => {
+            console.error("Failed to send unrecognized message:", err);
+          });
+        }
+      } else {
+        // No admin user, use legacy .env configuration
+        console.warn("No admin user found, using legacy .env configuration");
+        twilio.sendSMSLegacy(From, unrecognizedMessage).catch(err => {
+          console.error("Failed to send unrecognized message:", err);
+        });
+      }
 
-      // Return TwiML response immediately
-      return res.type("text/xml").send(
-        `<?xml version="1.0" encoding="UTF-8"?>
-        <Response>
-          <Message>${unrecognizedMessage}</Message>
-        </Response>`
-      );
+      // Return 200 OK - we've already sent the SMS via async call
+      // Don't return TwiML to avoid sending duplicate messages
+      return res.status(200).send("OK");
     }
 
     const tenant = tenantResult.rows[0];
@@ -104,9 +152,9 @@ router.post("/twilio/sms", async (req, res) => {
     // Format conversation history for OpenAI
     const conversationHistory = aiService.formatConversationHistory(recentMessages);
 
-    // Load open maintenance requests for context
+    // Load open maintenance requests for context (include ID for AI reference)
     const maintenanceResult = await db.query(
-      `SELECT issue_description, priority, status
+      `SELECT id, issue_description, priority, status
        FROM maintenance_requests
        WHERE tenant_id = $1
        AND status IN ('open', 'in_progress')
@@ -114,6 +162,301 @@ router.post("/twilio/sms", async (req, res) => {
        LIMIT 5`,
       [tenant.id]
     );
+
+    // CONVERSATIONAL DUPLICATE PREVENTION: Check for pending clarification
+    const pendingClarificationResult = await db.query(
+      `SELECT * FROM clarification_states
+       WHERE tenant_id = $1
+       AND thread_id = $2
+       AND state = 'pending'
+       AND expires_at > NOW()
+       ORDER BY asked_at DESC
+       LIMIT 1`,
+      [tenant.id, activeThread ? activeThread.id : null]
+    );
+
+    const pendingClarification = pendingClarificationResult.rows[0] || null;
+
+    // If there's a pending clarification, handle tenant's response
+    if (pendingClarification) {
+      console.log(`[Clarification Flow] Found pending clarification: ${pendingClarification.id}`);
+
+      // Load the open maintenance request
+      const requestResult = await db.query(
+        "SELECT * FROM maintenance_requests WHERE id = $1",
+        [pendingClarification.maintenance_request_id]
+      );
+
+      if (requestResult.rows.length === 0) {
+        console.error(`[Clarification Flow] Maintenance request ${pendingClarification.maintenance_request_id} not found`);
+        // Fallback to normal processing
+      } else {
+        const openRequest = requestResult.rows[0];
+
+        // Analyze tenant's response
+        const analysis = await aiService.analyzeClarificationResponse(Body, [openRequest]);
+
+        console.log(`[Clarification Flow] Analysis: intent=${analysis.intent}, requestId=${analysis.requestId}, confidence=${analysis.confidence}`);
+
+        // Update clarification state as answered
+        await db.query(
+          `UPDATE clarification_states
+           SET state = 'answered', answered_at = NOW()
+           WHERE id = $1`,
+          [pendingClarification.id]
+        );
+
+        // Handle based on intent
+        if (analysis.intent === "same" || analysis.intent === "number") {
+          const requestId = analysis.requestId || openRequest.id;
+
+          console.log(`[Clarification Flow] Tenant confirmed same issue, updating request ${requestId}`);
+
+          // Update existing request
+          const updateResult = await updateExistingRequest(
+            requestId,
+            'normal', // Default priority for confirmation
+            Body, // Use tenant's message as new description
+            tenant.id,
+            property ? property.id : null,
+            'clarification-flow'
+          );
+
+          // Generate confirmation response
+          const confirmationResponse = `Thanks for confirming! I've updated your maintenance request about "${openRequest.issue_description}" with the new details.`;
+
+          // Log messages
+          const messageResult = await db.query(
+            `INSERT INTO messages
+             (thread_id, tenant_id, channel, message, message_type, timestamp)
+             VALUES ($1, $2, 'sms', $3, 'user_message', NOW())
+             RETURNING *`,
+            [activeThread ? activeThread.id : null, tenant.id, Body]
+          );
+
+          const responseResult = await db.query(
+            `INSERT INTO messages
+             (thread_id, tenant_id, channel, message, response, ai_actions, message_type, timestamp)
+             VALUES ($1, $2, 'sms', $3, $4, $5, 'ai_response', NOW())
+             RETURNING *`,
+            [
+              activeThread ? activeThread.id : null,
+              tenant.id,
+              Body,
+              confirmationResponse,
+              null // No actions for confirmation
+            ]
+          );
+
+          // Update thread activity
+          if (activeThread) {
+            await db.query(
+              `UPDATE conversation_threads
+               SET last_activity_at = NOW()
+               WHERE id = $1`,
+              [activeThread.id]
+            );
+          }
+
+          const cleanResponse = cleanupResponseForSMS(confirmationResponse);
+
+          // Return TwiML response
+          return res.type("text/xml").send(
+            `<?xml version="1.0" encoding="UTF-8"?>
+            <Response>
+              <Message>${cleanResponse}</Message>
+            </Response>`
+          );
+        } else {
+          // Different issue - create new request
+          console.log(`[Clarification Flow] Tenant confirmed different issue, creating new request`);
+
+          // Extract actions from AI to get maintenance request details
+          const tempAnalysis = await aiService.generateResponseWithAnalysis(
+            property,
+            tenant,
+            conversationHistory,
+            Body,
+            maintenanceResult.rows,
+            activeThread
+          );
+
+          const actions = aiService.extractActions(tempAnalysis.response);
+          const deduplicatedActions = aiService.deduplicateActions(actions);
+
+          // Execute actions (should create new request)
+          const executedActions = [];
+          for (const action of deduplicatedActions) {
+            try {
+              const result = await executeAction(
+                action,
+                tenant.id,
+                property ? property.id : null,
+                activeThread ? activeThread.id : null,
+                null // No message ID yet
+              );
+              executedActions.push({ ...action, status: "executed", result });
+            } catch (error) {
+              console.error("Failed to execute action:", error);
+              executedActions.push({ ...action, status: "failed", error: error.message });
+            }
+          }
+
+          const confirmationResponse = `Thanks for clarifying! I've created a new maintenance request for this issue.`;
+
+          // Log messages
+          const messageResult = await db.query(
+            `INSERT INTO messages
+             (thread_id, tenant_id, channel, message, message_type, timestamp)
+             VALUES ($1, $2, 'sms', $3, 'user_message', NOW())
+             RETURNING *`,
+            [activeThread ? activeThread.id : null, tenant.id, Body]
+          );
+
+          const responseResult = await db.query(
+            `INSERT INTO messages
+             (thread_id, tenant_id, channel, message, response, ai_actions, message_type, timestamp)
+             VALUES ($1, $2, 'sms', $3, $4, $5, 'ai_response', NOW())
+             RETURNING *`,
+            [
+              activeThread ? activeThread.id : null,
+              tenant.id,
+              Body,
+              confirmationResponse,
+              JSON.stringify(actions)
+            ]
+          );
+
+          // Update thread activity
+          if (activeThread) {
+            await db.query(
+              `UPDATE conversation_threads
+               SET last_activity_at = NOW()
+               WHERE id = $1`,
+              [activeThread.id]
+            );
+          }
+
+          const cleanResponse = cleanupResponseForSMS(confirmationResponse);
+
+          // Return TwiML response
+          return res.type("text/xml").send(
+            `<?xml version="1.0" encoding="UTF-8"?>
+            <Response>
+              <Message>${cleanResponse}</Message>
+            </Response>`
+          );
+        }
+      }
+    }
+
+    // No pending clarification - check if we should ask one
+    // Only ask if: 1) there are open maintenance requests, 2) not an emergency, 3) clarification hasn't been asked yet
+    const shouldAskClarification = maintenanceResult.rows.length > 0 &&
+                                   !aiService.isEmergency(Body) &&
+                                   (!activeThread || activeThread.clarification_asked === false);
+
+    if (shouldAskClarification) {
+      console.log(`[Clarification Flow] Found ${maintenanceResult.rows.length} open maintenance request(s) and clarification not asked yet`);
+
+      // Generate clarification question
+      const clarification = await aiService.generateClarificationQuestion(
+        tenant.name,
+        maintenanceResult.rows,
+        Body
+      );
+
+      if (clarification.shouldAsk) {
+        console.log(`[Clarification Flow] Asking clarification: "${clarification.question}"`);
+
+        // Create new thread if needed for clarification
+        let clarificationThreadId = activeThread ? activeThread.id : null;
+        let isNewThread = false;
+
+        if (!clarificationThreadId) {
+          const subject = await aiService.extractSubject(Body);
+          const threadResult = await db.query(
+            `INSERT INTO conversation_threads
+             (tenant_id, property_id, subject, channel, created_at, last_activity_at, clarification_asked)
+             VALUES ($1, $2, $3, 'sms', NOW(), NOW(), true)
+             RETURNING *`,
+            [tenant.id, property ? property.id : null, subject]
+          );
+          clarificationThreadId = threadResult.rows[0].id;
+          isNewThread = true;
+          console.log(`[Clarification Flow] Created new thread ${clarificationThreadId} for clarification`);
+        } else {
+          // Mark existing thread as having asked clarification
+          await db.query(
+            `UPDATE conversation_threads
+             SET clarification_asked = true
+             WHERE id = $1`,
+            [clarificationThreadId]
+          );
+          console.log(`[Clarification Flow] Marked thread ${clarificationThreadId} as having asked clarification`);
+        }
+
+        // Save clarification state
+        await db.query(
+          `INSERT INTO clarification_states
+           (tenant_id, thread_id, maintenance_request_id, channel, state, question, asked_at, expires_at)
+           VALUES ($1, $2, $3, 'sms', 'pending', $4, NOW(), NOW() + INTERVAL '24 hours')
+           RETURNING *`,
+          [
+            tenant.id,
+            clarificationThreadId,
+            maintenanceResult.rows[0].id, // Most recent request
+            clarification.question,
+          ]
+        );
+
+        // Log messages
+        const messageResult = await db.query(
+          `INSERT INTO messages
+           (thread_id, tenant_id, channel, message, message_type, timestamp)
+           VALUES ($1, $2, 'sms', $3, 'user_message', NOW())
+           RETURNING *`,
+          [clarificationThreadId, tenant.id, Body]
+        );
+
+        const responseResult = await db.query(
+          `INSERT INTO messages
+           (thread_id, tenant_id, channel, message, response, ai_actions, message_type, timestamp)
+           VALUES ($1, $2, 'sms', $3, $4, $5, 'ai_response', NOW())
+           RETURNING *`,
+          [
+            clarificationThreadId,
+            tenant.id,
+            Body,
+            clarification.question,
+            null // No actions for clarification question
+          ]
+        );
+
+        // Update thread activity
+        await db.query(
+          `UPDATE conversation_threads
+           SET last_activity_at = NOW()
+           WHERE id = $1`,
+          [clarificationThreadId]
+        );
+
+        const cleanResponse = cleanupResponseForSMS(clarification.question);
+
+        // Return TwiML response
+        return res.type("text/xml").send(
+          `<?xml version="1.0" encoding="UTF-8"?>
+          <Response>
+            <Message>${cleanResponse}</Message>
+          </Response>`
+        );
+      }
+    } else if (maintenanceResult.rows.length > 0 && !aiService.isEmergency(Body)) {
+      console.log(`[Clarification Flow] Skipping clarification - already asked for this thread`);
+    }
+
+    // No clarification needed - process normally
+    console.log(`[Clarification Flow] No clarification needed, processing normally`);
 
     // Generate AI response with thread analysis
     const analysis = await aiService.generateResponseWithAnalysis(
@@ -159,8 +502,8 @@ router.post("/twilio/sms", async (req, res) => {
 
       const threadResult = await db.query(
         `INSERT INTO conversation_threads
-           (tenant_id, property_id, subject, channel, created_at, last_activity_at)
-           VALUES ($1, $2, $3, 'sms', NOW(), NOW())
+           (tenant_id, property_id, subject, channel, created_at, last_activity_at, clarification_asked)
+           VALUES ($1, $2, $3, 'sms', NOW(), NOW(), false)
            RETURNING *`,
         [tenant.id, property ? property.id : null, subject]
       );
@@ -389,8 +732,8 @@ router.post("/email/inbound", async (req, res) => {
 
       const threadResult = await db.query(
         `INSERT INTO conversation_threads
-           (tenant_id, property_id, subject, channel, created_at, last_activity_at)
-           VALUES ($1, $2, $3, 'email', NOW(), NOW())
+           (tenant_id, property_id, subject, channel, created_at, last_activity_at, clarification_asked)
+           VALUES ($1, $2, $3, 'email', NOW(), NOW(), false)
            RETURNING *`,
         [tenant.id, property ? property.id : null, threadSubject]
       );
@@ -851,6 +1194,119 @@ async function createMaintenanceRequest(action, tenantId, propertyId, threadId, 
 }
 
 /**
+ * Update existing maintenance request with new priority/description
+ */
+async function updateExistingRequest(requestId, priority, description, tenantId, propertyId, deduplicationLayer = 'unknown') {
+  // Load existing request
+  const existingResult = await db.query(
+    "SELECT * FROM maintenance_requests WHERE id = $1",
+    [requestId]
+  );
+
+  if (existingResult.rows.length === 0) {
+    throw new Error(`Maintenance request ${requestId} not found`);
+  }
+
+  const existingRequest = existingResult.rows[0];
+
+  // Check if priority changed
+  const isEscalation = priority === 'emergency' && existingRequest.priority !== 'emergency';
+  const isDeescalation = priority !== 'emergency' && existingRequest.priority === 'emergency';
+
+  console.log(`[Update Existing Request] Request ID: ${requestId}`);
+  console.log(`  Previous priority: ${existingRequest.priority}, New priority: ${priority}`);
+  console.log(`  Deduplication layer: ${deduplicationLayer}`);
+  console.log(`  Action type: ${isEscalation ? 'escalation' : (isDeescalation ? 'de-escalation' : 'update')}`);
+
+  // Build update query dynamically
+  const updateFields = [];
+  const updateValues = [];
+  let paramIndex = 1;
+
+  if (description) {
+    updateFields.push(`issue_description = $${paramIndex}`);
+    updateValues.push(description);
+    paramIndex++;
+  }
+
+  if (priority) {
+    updateFields.push(`priority = $${paramIndex}`);
+    updateValues.push(priority);
+    paramIndex++;
+  }
+
+  updateFields.push(`updated_at = NOW()`);
+  updateValues.push(requestId);
+
+  const result = await db.query(
+    `UPDATE maintenance_requests
+     SET ${updateFields.join(', ')}
+     WHERE id = $${paramIndex}
+     RETURNING *`,
+    updateValues
+  );
+
+  const updatedRequest = result.rows[0];
+
+  // Handle escalation/de-escalation notifications
+  if (isEscalation) {
+    console.log(`[Maintenance Request] Escalated request ${requestId} to emergency`);
+    await notifyEscalation(updatedRequest, tenantId, propertyId);
+  } else if (isDeescalation) {
+    console.log(`[Maintenance Request] De-escalated request ${requestId} to ${priority}`);
+  }
+
+  return {
+    type: "maintenance_request",
+    request_id: requestId,
+    priority,
+    action: isEscalation ? 'escalated' : (isDeescalation ? 'de-escalated' : 'updated'),
+    existing_request: true,
+    deduplication_layer: deduplicationLayer,
+  };
+}
+
+/**
+ * Notify manager of escalated maintenance request
+ */
+async function notifyEscalation(maintenanceRequest, tenantId, propertyId) {
+  // Load tenant and property details
+  const tenantResult = await db.query(
+    "SELECT * FROM tenants WHERE id = $1",
+    [tenantId]
+  );
+  const propertyResult = await db.query(
+    "SELECT * FROM properties WHERE id = $1",
+    [propertyId]
+  );
+
+  if (tenantResult.rows.length === 0 || propertyResult.rows.length === 0) {
+    return;
+  }
+
+  const tenant = tenantResult.rows[0];
+  const property = propertyResult.rows[0];
+
+  // Load admin user profile
+  const adminUserResult = await db.query(
+    "SELECT id, email, phone FROM users WHERE id = 1"
+  );
+  const adminUser = adminUserResult.rows[0];
+
+  // Send emergency notification
+  const result = await notificationService.notifyManagerOfEmergency(
+    `Maintenance request escalated to emergency: ${maintenanceRequest.issue_description}`,
+    tenant,
+    property,
+    adminUser ? adminUser.phone : property.owner_phone,
+    adminUser ? adminUser.email : property.owner_email,
+    adminUser ? adminUser.id : null
+  );
+
+  console.log(`Escalation notification sent: ${result.success ? "SUCCESS" : "FAILED"}`);
+}
+
+/**
  * Alert property manager
  * Sends immediate SMS notification for emergencies
  */
@@ -877,6 +1333,9 @@ async function alertManager(action, tenantId, propertyId) {
   const tenant = tenantResult.rows[0];
   const property = propertyResult.rows[0];
 
+  // Get admin user ID for notification
+  const adminUserId = await getAdminUserId();
+
   // Get admin user contact information (with property owner fallback)
   const adminContact = await getAdminContactInfo(propertyId);
 
@@ -890,7 +1349,8 @@ async function alertManager(action, tenantId, propertyId) {
     tenant,
     property,
     adminContact.phone,
-    adminContact.email
+    adminContact.email,
+    adminUserId
   );
 
   console.log(`Emergency alert sent: ${result.success ? "SUCCESS" : "FAILED"}`);

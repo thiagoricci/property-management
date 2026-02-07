@@ -252,7 +252,7 @@ export default function TwilioSettings({
                 id="account_sid"
                 type="text"
                 value={accountSid}
-                onChange={(e) => setAccountSid(e.target.value.toUpperCase())}
+                onChange={(e) => setAccountSid(e.target.value.trim())}
                 placeholder="ACxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"
                 className="pl-10 font-mono"
                 required

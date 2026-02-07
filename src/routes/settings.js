@@ -6,7 +6,7 @@ const router = express.Router();
 
 // Validation helpers
 const validateTwilioAccountSid = (sid) => {
-  return /^AC[a-f0-9]{32}$/.test(sid);
+  return /^AC[a-fA-F0-9]{32}$/.test(sid);
 };
 
 const validateTwilioAuthToken = (token) => {

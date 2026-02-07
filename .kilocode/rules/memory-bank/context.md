@@ -3,18 +3,81 @@
 ## Current Status
 
 **Phase**: Phase 3 Enhancement - COMPLETED (Steps 11-15)
-**Last Updated**: 2026-01-21
+**Last Updated**: 2026-01-23
 
 ## Current Work Focus
 
-Conversation Threading Implementation - COMPLETED (2026-01-21). Implemented proper conversation threading to separate topics from individual messages:
+Duplicate Maintenance Request Fix v2 - COMPLETED (2026-01-23). Enhanced duplicate prevention system with 5-layer approach:
 
-- Created conversation_threads table to group messages by topic/subject
-- Renamed conversations table to messages (better reflects individual exchanges)
-- AI-powered topic detection to identify when new messages continue current topic or start new one
-- Automatic conversation resolution detection
-- Thread status tracking (active/resolved/escalated)
-- Updated all webhooks, API endpoints, and frontend to work with thread-based structure
+**Changes Made:**
+
+1. **Enhanced AI System Prompt** (src/services/aiService.js)
+   - Moved duplicate prevention instructions to TOP of prompt
+   - Made instructions more explicit and harder to ignore
+   - Added concrete examples of what NOT to do
+   - Added "CRITICAL" warning section
+   - Provided clear step-by-step instructions for AI
+
+2. **Added Pre-Action Duplicate Check** (src/routes/messages.js)
+   - New Layer 0: Pre-action validation before executing any maintenance_request action
+   - Checks for similar requests in last 1 hour (stricter time window)
+   - Uses AI analysis to determine if action is duplicate
+   - Automatically updates existing request instead of creating new one
+
+3. **Enhanced Rule-Based Deduplication** (src/routes/messages.js)
+   - Lowered keyword overlap threshold from 50% to 30% (more aggressive)
+   - Changed time window from 24 hours to 1 hour (stricter)
+   - Added priority escalation check (20% threshold for escalation)
+   - Added location-based deduplication (same room/area = duplicate)
+
+4. **Added Comprehensive Logging** (src/routes/messages.js)
+   - Deduplication metrics logging at multiple points
+   - Tracks pre-action checks, rule-based detections, AI-based detections
+   - Tracks total duplicates prevented
+   - Added deduplication_layer tracking for all update operations
+
+5. **Updated Action Execution Flow** (src/routes/messages.js)
+   - executeAction now calls preActionDuplicateCheck before executing maintenance_request actions
+   - Automatically updates existing requests when duplicates detected
+   - Returns deduplication_layer information for tracking
+
+6. **Created Test Suite** (tests/test-duplicate-prevention-v2.js)
+   - 6 test scenarios covering all deduplication layers
+   - Tests: multiple messages, priority escalation, rule-based deduplication, different issues, location-based deduplication, AI-provided ID
+   - Validates pre-action duplicate check functionality
+
+**5-Layer Deduplication Strategy:**
+
+```
+Layer 0: Pre-Action Validation (NEW)
+    ↓
+Layer 1: AI Explicit Reference (existing_request_id)
+    ↓
+Layer 2: Rule-Based Deduplication (30% threshold, 1 hour window)
+    ↓
+Layer 3: AI-Based Cross-Thread Deduplication (semantic analysis)
+    ↓
+Layer 4: Create New Request (only if all layers fail)
+```
+
+**Expected Outcome:**
+
+- AI consistently includes existing_request_id when updating existing requests
+- Pre-action check catches duplicates before creation
+- Rule-based deduplication more aggressive and reliable
+- Comprehensive logging enables monitoring
+- Single maintenance request per issue
+- Manager receives one notification with updates
+
+Previous completed work:
+
+- Conversation Threading Implementation - COMPLETED (2026-01-21). Implemented proper conversation threading to separate topics from individual messages:
+  - Created conversation_threads table to group messages by topic/subject
+  - Renamed conversations table to messages (better reflects individual exchanges)
+  - AI-powered topic detection to identify when new messages continue current topic or start new one
+  - Automatic conversation resolution detection
+  - Thread status tracking (active/resolved/escalated)
+  - Updated all webhooks, API endpoints, and frontend to work with thread-based structure
 
 Previous completed work:
 
@@ -99,6 +162,18 @@ Previous completed work:
   - Related maintenance requests display
   - Manual reply functionality (ready for Twilio/Resend integration)
   - Pagination support
+
+**2026-01-23**:
+
+- Fixed duplicate maintenance request issue
+  - Modified createMaintenanceRequest in src/routes/messages.js to check for existing_request_id in AI actions
+  - Created updateExistingRequest function to update existing requests with new priority/description
+  - Created notifyEscalation function to handle emergency escalation notifications
+  - Added escalation/de-escalation logic with proper priority change detection
+  - AI now correctly updates existing requests when tenant sends follow-up messages about same issue
+  - Created comprehensive test suite (tests/test-maintenance-deduplication.js) with 4 test scenarios
+  - Created detailed implementation plan (plans/fix-duplicate-maintenance-requests.md)
+  - All changes documented and ready for testing
 
 **2026-01-21**:
 
